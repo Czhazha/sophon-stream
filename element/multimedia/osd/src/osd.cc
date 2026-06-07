@@ -398,6 +398,7 @@ void Osd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
   }
 
   objectMetadata->mFrame->mSpDataOsd = imageStorage;
+  objectMetadata->mFrame->mSpData.reset();
 }
 
 REGISTER_WORKER("osd", Osd)

@@ -32,10 +32,10 @@ common::ErrorCode Resize::initInternal(const std::string& json) {
 
   dst_h = configure.find(CONFIG_INTERNAL_DST_H_FILED)->get<int>();
   dst_w = configure.find(CONFIG_INTERNAL_DST_W_FILED)->get<int>();
-  crop_top = configure.find(CONFIG_INTERNAL_CROP_TOP_FILED)->get<int>();
-  crop_left = configure.find(CONFIG_INTERNAL_CROP_LEFT_FILED)->get<int>();
-  crop_h = configure.find(CONFIG_INTERNAL_CROP_H_FILED)->get<int>();
-  crop_w = configure.find(CONFIG_INTERNAL_CROP_W_FILED)->get<int>();
+  crop_top = configure.value(CONFIG_INTERNAL_CROP_TOP_FILED, 0);
+  crop_left = configure.value(CONFIG_INTERNAL_CROP_LEFT_FILED, 0);
+  crop_h = configure.value(CONFIG_INTERNAL_CROP_H_FILED, 0);
+  crop_w = configure.value(CONFIG_INTERNAL_CROP_W_FILED, 0);
   
   
 
@@ -55,15 +55,17 @@ common::ErrorCode Resize::resize_work(
       p = nullptr;
     });
 
+    bm_image& src_image = *resObj->mFrame->mSpData;
+    int use_crop_w = crop_w > 0 ? crop_w : src_image.width;
+    int use_crop_h = crop_h > 0 ? crop_h : src_image.height;
+
     bm_status_t ret =
         bm_image_create(resObj->mFrame->mHandle, dst_h, dst_w, FORMAT_YUV420P,
                         DATA_TYPE_EXT_1N_BYTE, resize_image.get());
     bm_image_alloc_dev_mem(*resize_image, 1);
 
-
-    bmcv_rect_t crop_rect{crop_left, crop_top,
-                          (unsigned int)crop_w,
-                          (unsigned int)crop_h};
+    bmcv_rect_t crop_rect{
+        crop_left, crop_top, (unsigned int)use_crop_w, (unsigned int)use_crop_h};
     bmcv_padding_atrr_t padding_attr;
     memset(&padding_attr, 0, sizeof(padding_attr));
     padding_attr.dst_crop_sty =0;
@@ -75,9 +77,9 @@ common::ErrorCode Resize::resize_work(
     padding_attr.dst_crop_h = (unsigned int)dst_h;
     padding_attr.dst_crop_w = (unsigned int)dst_w;
 
-    ret = bmcv_image_vpp_convert_padding(resObj->mFrame->mHandle, 1,
-                                         *resObj->mFrame->mSpData, resize_image.get(),
-                                         &padding_attr, &crop_rect);
+    ret = bmcv_image_vpp_convert_padding(resObj->mFrame->mHandle, 1, src_image,
+                                         resize_image.get(), &padding_attr,
+                                         &crop_rect);
 
     resObj->mFrame->mSpData = resize_image;  
     resObj->mFrame->mWidth = resObj->mFrame->mSpData->width;

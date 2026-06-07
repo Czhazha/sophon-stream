@@ -104,6 +104,13 @@ common::ErrorCode QtDisplay::doWork(int dataPipeId) {
   }
   if (data == nullptr) return common::ErrorCode::SUCCESS;
 
+  // Drop stale frames and keep only the latest one to limit device memory usage.
+  while (getThreadStatus() == ThreadStatus::RUN) {
+    auto newer = popInputData(inputPort, dataPipeId);
+    if (!newer) break;
+    data = newer;
+  }
+
   auto objectMetadata = std::static_pointer_cast<common::ObjectMetadata>(data);
 
   int channel_id = objectMetadata->mFrame->mChannelIdInternal;
@@ -131,9 +138,12 @@ common::ErrorCode QtDisplay::doWork(int dataPipeId) {
       ui_cv.wait_for(lock, std::chrono::seconds(10),
                      [this] { return ui_ready.load(); });
     }
-    if (label_idx < static_cast<int>(label_vec.size()))
-      label_vec[label_idx]->show_img(bmimg_ptr);
-    else
+    if (label_idx < static_cast<int>(label_vec.size())) {
+      if (bmimg_ptr) {
+        // Hold one display reference until Qt thread finishes rendering.
+        label_vec[label_idx]->submit_frame(bmimg_ptr);
+      }
+    } else
       IVS_WARN(
           "label index {0:d} exceeds label count {1:d} for channel {2:d}",
           label_idx, label_vec.size(), channel_id);

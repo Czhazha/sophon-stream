@@ -14,7 +14,10 @@
 #include <QGridLayout>
 #include <QLabel>
 #include <QWidget>
+#include <atomic>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <vector>
 #include "opencv2/opencv.hpp"
 
@@ -28,17 +31,19 @@ class BMLabel : public QLabel {
   explicit BMLabel(QWidget* parent, int width, int height);
   ~BMLabel();
 
-  void show_img(std::shared_ptr<bm_image> bmimg_ptr);
+  // Non-blocking: keeps only the latest frame for display.
+  void submit_frame(std::shared_ptr<bm_image> bmimg_ptr);
 
  public slots:
-
-  void show_pixmap();
-
- signals:
-  void show_signals();
+  void process_pending();
 
  private:
+  void render_frame(const std::shared_ptr<bm_image>& bmimg_ptr);
+
   QPixmap image_pixmap;
+  std::mutex pending_mutex_;
+  std::shared_ptr<bm_image> pending_img_;
+  std::atomic<bool> process_scheduled_{false};
 };
 
 }  // namespace qt_display
