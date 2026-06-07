@@ -140,7 +140,8 @@ common::ErrorCode QtDisplay::doWork(int dataPipeId) {
     }
     if (label_idx < static_cast<int>(label_vec.size())) {
       if (bmimg_ptr) {
-        // Hold one display reference until Qt thread finishes rendering.
+        // Conversion happens synchronously on this worker thread; the GUI
+        // thread only does the lightweight setPixmap/update.
         label_vec[label_idx]->submit_frame(bmimg_ptr);
       }
     } else

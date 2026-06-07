@@ -12,6 +12,7 @@
 
 #include <QApplication>
 #include <QGridLayout>
+#include <QImage>
 #include <QLabel>
 #include <QWidget>
 #include <atomic>
@@ -31,18 +32,21 @@ class BMLabel : public QLabel {
   explicit BMLabel(QWidget* parent, int width, int height);
   ~BMLabel();
 
-  // Non-blocking: keeps only the latest frame for display.
+  // Called from worker threads. Performs the heavy device->host copy and
+  // pixel conversion here (NOT on the Qt GUI thread), then keeps only the
+  // latest converted frame for display.
   void submit_frame(std::shared_ptr<bm_image> bmimg_ptr);
 
  public slots:
+  // Runs on the Qt GUI thread: only does the lightweight setPixmap/update.
   void process_pending();
 
  private:
-  void render_frame(const std::shared_ptr<bm_image>& bmimg_ptr);
+  QImage convert_frame(const std::shared_ptr<bm_image>& bmimg_ptr);
 
   QPixmap image_pixmap;
   std::mutex pending_mutex_;
-  std::shared_ptr<bm_image> pending_img_;
+  QImage pending_image_;
   std::atomic<bool> process_scheduled_{false};
 };
 
