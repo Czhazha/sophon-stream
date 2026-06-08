@@ -12,22 +12,27 @@
 #include <QMetaObject>
 #include <QTimer>
 
+#include <cstdio>
+#include <algorithm>
+
 namespace sophon_stream {
 namespace element {
 namespace qt_display {
 
 BMLabel::BMLabel(QWidget* parent, int width, int height) : QLabel(parent) {
   setFixedSize(width, height);
+  setContentsMargins(0, 0, 0, 0);
+  setAlignment(Qt::AlignLeft | Qt::AlignTop);
 }
 
 BMLabel::~BMLabel() {}
 
-void BMLabel::submit_frame(std::shared_ptr<bm_image> bmimg_ptr) {
+void BMLabel::submit_frame(std::shared_ptr<bm_image> bmimg_ptr, float tmp_fps) {
   if (!bmimg_ptr) return;
 
   // Heavy work (device->host copy, resize, color convert) runs here on the
   // worker thread so the Qt GUI thread is not the throughput bottleneck.
-  QImage image = convert_frame(bmimg_ptr);
+  QImage image = convert_frame(bmimg_ptr, tmp_fps);
   if (image.isNull()) return;
 
   bool schedule = false;
@@ -73,7 +78,8 @@ void BMLabel::process_pending() {
   }
 }
 
-QImage BMLabel::convert_frame(const std::shared_ptr<bm_image>& bmimg_ptr) {
+QImage BMLabel::convert_frame(const std::shared_ptr<bm_image>& bmimg_ptr,
+                              float tmp_fps) {
   int label_width = this->width();
   int label_height = this->height();
 
@@ -83,6 +89,24 @@ QImage BMLabel::convert_frame(const std::shared_ptr<bm_image>& bmimg_ptr) {
 
   cv::Mat mat_resized;
   cv::resize(mat_bgr, mat_resized, cv::Size(label_width, label_height));
+
+  char fps_text[64];
+  std::snprintf(fps_text, sizeof(fps_text), "fps: %.1f", tmp_fps);
+  const double font_scale = std::max(0.45, label_height / 540.0 * 0.55);
+  const int thickness = std::max(1, static_cast<int>(font_scale * 2));
+  int baseline = 0;
+  cv::Size text_size = cv::getTextSize(fps_text, cv::FONT_HERSHEY_SIMPLEX,
+                                       font_scale, thickness, &baseline);
+  const int margin = std::max(4, label_height / 54);
+  const int x = margin;
+  const int y = label_height - margin;
+  cv::rectangle(mat_resized,
+                cv::Point(x - 2, y - text_size.height - baseline - 2),
+                cv::Point(x + text_size.width + 2, y + baseline + 2),
+                cv::Scalar(0, 0, 0), cv::FILLED);
+  cv::putText(mat_resized, fps_text, cv::Point(x, y),
+              cv::FONT_HERSHEY_SIMPLEX, font_scale, cv::Scalar(0, 255, 0),
+              thickness);
 
   cv::Mat rgb_mat;
   if (mat_resized.channels() == 3) {

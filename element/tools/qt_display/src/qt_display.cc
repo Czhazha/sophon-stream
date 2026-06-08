@@ -33,11 +33,16 @@ int QtDisplay::qt_func() {
   qapp = new QApplication(q_argc, &q_argv);
   qwidget_ptr = new QWidget;
 
-  qwidget_ptr->setGeometry(0, 0, screen_width, screen_height);
+  qwidget_ptr->setFixedSize(screen_width, screen_height);
+  qwidget_ptr->move(0, 0);
   layout = new QGridLayout(qwidget_ptr);
+  // Default QGridLayout margins/spacing (~11px + 6px gaps) make a 2x3 grid
+  // wider than screen_width, causing cell overlap and right-edge clipping.
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(0);
 
-  int label_width = screen_width/cols;
-  int label_height = screen_height/rows;
+  int label_width = screen_width / cols;
+  int label_height = screen_height / rows;
 
   for (int row = 0; row < rows; row++) {
     for (int col = 0; col < cols; col++) {
@@ -140,9 +145,17 @@ common::ErrorCode QtDisplay::doWork(int dataPipeId) {
     }
     if (label_idx < static_cast<int>(label_vec.size())) {
       if (bmimg_ptr) {
+        if (!mFpsProfilers.count(channel_id)) {
+          auto* fps_profiler = new ::sophon_stream::common::FpsProfiler();
+          mFpsProfilers[channel_id] = fps_profiler;
+          mFpsProfilers[channel_id]->config(
+              "qt_display_" + std::to_string(channel_id), 100);
+        }
+        mFpsProfilers[channel_id]->add(1);
+        const float tmp_fps = mFpsProfilers[channel_id]->getTmpFps();
         // Conversion happens synchronously on this worker thread; the GUI
         // thread only does the lightweight setPixmap/update.
-        label_vec[label_idx]->submit_frame(bmimg_ptr);
+        label_vec[label_idx]->submit_frame(bmimg_ptr, tmp_fps);
       }
     } else
       IVS_WARN(
@@ -151,16 +164,6 @@ common::ErrorCode QtDisplay::doWork(int dataPipeId) {
   }
 
   if (stopped_num == channel_ids.size()) qapp->quit();
-
-  if (!mFpsProfilers.count(channel_id)) {
-    ::sophon_stream::common::FpsProfiler* mFpsProfiler =
-        new ::sophon_stream::common::FpsProfiler();
-    mFpsProfilers[channel_id] = mFpsProfiler;
-    mFpsProfilers[channel_id]->config(
-        "qt_display_" + std::to_string(channel_id), 100);
-  }
-
-  mFpsProfilers[channel_id]->add(1);
 
   int channel_id_internal = objectMetadata->mFrame->mChannelIdInternal;
   int outDataPipeId =

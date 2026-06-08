@@ -35,14 +35,14 @@ class BMLabel : public QLabel {
   // Called from worker threads. Performs the heavy device->host copy and
   // pixel conversion here (NOT on the Qt GUI thread), then keeps only the
   // latest converted frame for display.
-  void submit_frame(std::shared_ptr<bm_image> bmimg_ptr);
+  void submit_frame(std::shared_ptr<bm_image> bmimg_ptr, float tmp_fps);
 
  public slots:
   // Runs on the Qt GUI thread: only does the lightweight setPixmap/update.
   void process_pending();
 
  private:
-  QImage convert_frame(const std::shared_ptr<bm_image>& bmimg_ptr);
+  QImage convert_frame(const std::shared_ptr<bm_image>& bmimg_ptr, float tmp_fps);
 
   QPixmap image_pixmap;
   std::mutex pending_mutex_;
