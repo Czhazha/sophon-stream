@@ -63,6 +63,7 @@ checkAndAddElement(element/tools/stitch)
 checkAndAddElement(element/tools/fisheye)
 checkAndAddElement(element/tools/resize)
 checkAndAddElement(element/tools/filter)
+checkAndAddElement(element/tools/customosd)
 checkAndAddElement(element/tools/qt_display)
 
 checkAndAddElement(3rdparty/freetype2)

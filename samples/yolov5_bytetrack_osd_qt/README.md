@@ -1,7 +1,5 @@
 # YOLOv5 目标跟踪算法结果显示 Demo
 
-[English](README_EN.md) | 简体中文
-
 ## 目录
 - [1. 简介](#1-简介)
 - [2. 特性](#2-特性)
@@ -13,14 +11,15 @@
 
 ## 1. 简介
 
-本例程用于说明如何使用 sophon-stream 快速构建基于 **YOLOv5** 的视频目标检测与 **ByteTrack** 跟踪应用，并通过 **OSD + Qt** 将多路算法结果显示到 HDMI。
+本例程用于说明如何使用 sophon-stream 快速构建基于 **YOLOv5** 的视频目标检测与 **ByteTrack** 跟踪应用，并通过 **customosd + Qt** 将多路算法结果显示到 HDMI。
 
-流水线：`decode → yolov5_group → bytetrack → osd → qt_display`
+流水线：`decode → resize → yolov5_group → bytetrack → customosd → qt_display`
 
 ## 2. 特性
 
 * 检测模型使用 YOLOv5（yolov5_group 插件）；
 * 跟踪模型使用 ByteTrack；
+* 使用 customosd 支持按通道 ROI 过滤、拌线绘制与过线抓拍；
 * 支持 BM1684X（x86 PCIe、SoC）、BM1684（x86 PCIe、SoC、arm PCIe）、BM1688（SoC）；
 * 支持多路视频流、多线程；
 * 支持 Qt 多画面 HDMI 显示。
@@ -61,7 +60,7 @@ BM1684/BM1684X 交叉编译需 sophon-qt；BM1688 需 arm 公版 qt，参见 [yo
 
 ## 5. 程序编译
 
-参见 [sophon-stream 编译](../../docs/HowToMake.md)。需编译 element：`yolov5`、`bytetrack`、`decode`、`osd`、`qt_display`。
+参见 [sophon-stream 编译](../../docs/HowToMake.md)。需编译 element：`yolov5`、`bytetrack`、`decode`、`customosd`、`resize`、`qt_display`。
 
 ## 6. 程序运行
 
@@ -71,12 +70,21 @@ BM1684/BM1684X 交叉编译需 sophon-qt；BM1688 需 arm 公版 qt，参见 [yo
 
 | 文件 | 说明 |
 |------|------|
-| [yolov5_bytetrack_osd_qt_demo.json](./config/yolov5_bytetrack_osd_qt_demo.json) | 多路输入通道 |
+| [yolov5_bytetrack_osd_qt_demo.json](./config/yolov5_bytetrack_osd_qt_demo.json) | 多路输入通道（`channel_id` 需与 customosd 中一致） |
 | [engine_group.json](./config/engine_group.json) | Graph 与 element 连接 |
 | [yolov5_group.json](./config/yolov5_group.json) | YOLOv5 检测 |
 | [bytetrack.json](./config/bytetrack.json) | 跟踪 |
-| [osd.json](./config/osd.json) | 画框（TRACK 模式） |
+| [customosd.json](./config/customosd.json) | ROI 过滤、拌线绘制、过线抓拍 |
 | [qt_display.json](./config/qt_display.json) | Qt 拼接显示（2 行 × 3 列） |
+
+**customosd 要点**：
+
+* `channels[].channel_id` 与 demo 中每路 `channel_id` 对应（本例为 2、3、20、30）；
+* `rois`：多边形 ROI，检测框中心不在 ROI 内则不显示；
+* `lines`：拌线端点，用于过线判断；
+* `save_path`：过线图片保存目录；**留空或不配置则不保存**。
+
+详细参数见 [customosd README](../../element/tools/customosd/README.md)。
 
 内存不足时可减少 `channels` 中的路数。
 

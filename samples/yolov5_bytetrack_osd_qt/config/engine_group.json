@@ -32,7 +32,7 @@
             },
             {
                 "element_id": 5005,
-                "element_config": "../yolov5_bytetrack_osd_qt/config/osd.json"
+                "element_config": "../yolov5_bytetrack_osd_qt/config/customosd.json"
             },
             {
                 "element_id": 5006,
