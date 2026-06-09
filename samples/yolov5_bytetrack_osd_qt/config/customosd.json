@@ -3,6 +3,7 @@
     "class_names_file": "../yolov5_bytetrack_osd_qt/data/coco.names",
     "put_text": true,
     "save_path": "./customosd_results",
+    "save_image_mode": "clean",
     "channels": [
       {
         "channel_id": 2,

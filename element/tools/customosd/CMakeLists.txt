@@ -46,7 +46,7 @@ if (${TARGET_ARCH} STREQUAL "pcie")
     )
 
     add_dependencies(customosd ivslogger framework)
-    target_link_libraries(customosd ${BM_LIBS} ${FFMPEG_LIBS} ${OpenCV_LIBS} ${JPU_LIBS} -lpthread)
+    target_link_libraries(customosd ivslogger ${BM_LIBS} ${FFMPEG_LIBS} ${OpenCV_LIBS} ${JPU_LIBS} -lpthread)
 
 elseif (${TARGET_ARCH} STREQUAL "soc")
     add_compile_options(-fPIC)
@@ -78,5 +78,5 @@ elseif (${TARGET_ARCH} STREQUAL "soc")
     )
 
     add_dependencies(customosd ivslogger framework)
-    target_link_libraries(customosd ${BM_LIBS} ${OPENCV_LIBS} ${JPU_LIBS} -fprofile-arcs -lgcov -lpthread -lavcodec -lavformat -lavutil)
+    target_link_libraries(customosd ivslogger ${BM_LIBS} ${OPENCV_LIBS} ${JPU_LIBS} -fprofile-arcs -lgcov -lpthread -lavcodec -lavformat -lavutil)
 endif()

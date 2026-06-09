@@ -39,6 +39,13 @@ struct ChannelRule {
   std::vector<std::vector<common::Point<int>>> lines;
 };
 
+struct LatencyStats {
+  int count = 0;
+  std::int64_t sum_ms = 0;
+};
+
+enum class SaveImageMode { CLEAN, ANNOTATED };
+
 class CustomOsd : public ::sophon_stream::framework::Element {
  public:
   CustomOsd();
@@ -51,6 +58,8 @@ class CustomOsd : public ::sophon_stream::framework::Element {
       "class_names_file";
   static constexpr const char* CONFIG_INTERNAL_PUT_TEXT_FIELD = "put_text";
   static constexpr const char* CONFIG_INTERNAL_SAVE_PATH_FIELD = "save_path";
+  static constexpr const char* CONFIG_INTERNAL_SAVE_IMAGE_MODE_FIELD =
+      "save_image_mode";
   static constexpr const char* CONFIG_INTERNAL_CHANNELS_FIELD = "channels";
   static constexpr const char* CONFIG_INTERNAL_CHANNEL_ID_FIELD = "channel_id";
   static constexpr const char* CONFIG_INTERNAL_ROIS_FIELD = "rois";
@@ -62,21 +71,31 @@ class CustomOsd : public ::sophon_stream::framework::Element {
   void filterByRoi(std::shared_ptr<common::ObjectMetadata> objectMetadata,
                    const ChannelRule& rule);
   void checkLineCrossing(std::shared_ptr<common::ObjectMetadata> objectMetadata,
-                         const ChannelRule& rule, cv::Mat& frame);
-  void drawOverlays(const ChannelRule& rule, cv::Mat& frame);
+                         const ChannelRule& rule, const cv::Mat& osd_frame);
+  void drawOverlays(const ChannelRule& rule, cv::Mat& frame, float scale_x = 1.0f,
+                    float scale_y = 1.0f);
   void drawTrackBoxes(std::shared_ptr<common::ObjectMetadata> objectMetadata,
-                      cv::Mat& frame);
+                      cv::Mat& frame, float scale_x = 1.0f,
+                      float scale_y = 1.0f);
   void draw(std::shared_ptr<common::ObjectMetadata> objectMetadata);
   bool ensureSaveDir();
+  bool saveCrossingImage(std::shared_ptr<common::ObjectMetadata> objectMetadata,
+                         const ChannelRule& rule, const cv::Mat& osd_frame);
+  void recordOutputLatency(int channel_id, std::int64_t latency_ms);
+
+  static constexpr int LATENCY_LOG_INTERVAL = 100;
 
   std::vector<std::string> mClassNames;
   bool mPutText = false;
   std::string mSavePath;
+  SaveImageMode mSaveImageMode = SaveImageMode::CLEAN;
   std::unordered_map<int, ChannelRule> mChannelRules;
 
   std::mutex mStateMtx;
+  std::mutex mLatencyMtx;
   std::unordered_map<int, std::unordered_map<int, TrackCrossState>> mTrackStates;
   std::unordered_set<std::string> mSavedCrossings;
+  std::unordered_map<int, LatencyStats> mLatencyStats;
 
   ::sophon_stream::common::FpsProfiler mFpsProfiler;
 };

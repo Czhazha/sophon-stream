@@ -45,7 +45,8 @@ if (${TARGET_ARCH} STREQUAL "pcie")
         src/resize.cc
     )
 
-    target_link_libraries(resize ${FFMPEG_LIBS} ${OpenCV_LIBS} ${BM_LIBS} ${JPU_LIBS} -lpthread)
+    add_dependencies(resize ivslogger)
+    target_link_libraries(resize ${FFMPEG_LIBS} ${OpenCV_LIBS} ${BM_LIBS} ${JPU_LIBS} ivslogger -lpthread)
 
 elseif (${TARGET_ARCH} STREQUAL "soc")
     add_compile_options(-fPIC)
@@ -75,5 +76,6 @@ elseif (${TARGET_ARCH} STREQUAL "soc")
     add_library(resize SHARED
         src/resize.cc
     )
-    target_link_libraries(resize ${FFMPEG_LIBS} ${OpenCV_LIBS} ${BM_LIBS} ${JPU_LIBS} -fprofile-arcs -lgcov -lpthread)
+    add_dependencies(resize ivslogger)
+    target_link_libraries(resize ${FFMPEG_LIBS} ${OpenCV_LIBS} ${BM_LIBS} ${JPU_LIBS} ivslogger -fprofile-arcs -lgcov -lpthread)
 endif()
