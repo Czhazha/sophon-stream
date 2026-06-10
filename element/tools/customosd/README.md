@@ -9,7 +9,6 @@ sophon-stream customosd element 是 sophon-stream 框架中的自定义可视化
 * ROI 过滤：检测框中心点不在任一 ROI 内则丢弃且不绘制
 * 拌线检测：根据跟踪 ID 判断目标轨迹是否穿过拌线
 * 同一目标对同一条线仅保存首张过线图片（需配置 `save_path`）
-* 过线抓拍从 resize 的 CPU 原图采样缓存中查找最近可用帧
 * 输出每帧解码到 customosd 的端到端延迟日志（毫秒）
 * 在画面上绘制 ROI（绿色）与拌线（红色）及跟踪框
 
@@ -54,7 +53,7 @@ sophon-stream customosd element 是 sophon-stream 框架中的自定义可视化
 | class_names_file | 字符串 | 无 | 类别名称文件路径，`put_text` 为 true 时用于显示类别 |
 | put_text | 布尔值 | false | 是否在检测框旁绘制 track_id 与类别名 |
 | save_path | 字符串 | 空 | 过线抓拍图片保存目录；**为空或不配置则不保存** |
-| save_image_mode | 字符串 | clean | 过线抓拍图片内容；**仅当 `save_path` 非空时生效**。`clean`：干净原图；`annotated`：原图叠加 ROI、拌线与跟踪框 |
+| save_image_mode | 字符串 | clean | 过线抓拍图片内容；**仅当 `save_path` 非空时生效**。`clean`：无标注画面；`annotated`：叠加 ROI、拌线与跟踪框后的画面 |
 | channels | 数组 | 无 | 各通道 ROI / 拌线规则，见下表 |
 | shared_object | 字符串 | 无 | libcustomosd 动态库路径 |
 | name | 字符串 | "customosd" | element 名称 |
@@ -74,20 +73,18 @@ sophon-stream customosd element 是 sophon-stream 框架中的自定义可视化
 1. **ROI 过滤**：以检测框中心点判断；点在任一 ROI 多边形内则保留（OR 关系），否则从结果中移除且不画框。
 2. **拌线判断**：比较同一 `track_id` 相邻两帧中心点轨迹与拌线线段是否相交。
 3. **过线保存**：仅当 `save_path` 非空时，对 `(channel_id, track_id, line_index)` 首次过线保存一张 JPG，文件名格式：`channel_{id}_frame_{frameId}_{timestamp}.jpg`。
-   * 优先从 resize 的 `OriginFrameCache` 查找 `frame_id` 精确匹配或最近可用缓存。
-   * 若缓存帧与压线帧不一致，会打印 `gap` 警告；`annotated` 模式下框坐标按 OSD 画面比例映射到缓存原图。
-   * 缓存未命中时回退为保存当前 OSD 缩放画面。
+   * `clean` 模式保存绘制前的当前帧；`annotated` 模式保存叠加 ROI、拌线与跟踪框后的画面。
 4. **绘制**：ROI 绿色闭合多边形；拌线红色线段；保留的跟踪目标绘制彩色框。
-5. **延迟日志**：每路每 100 帧输出一次平均延迟 `CustomOsd output latency avg: channel=..., frames=100, decode_to_output=...ms`，表示 `mFrame->mTimestamp`（解码时刻）到 customosd 输出时刻差值的滑动平均。
+5. **耗时日志**：每路每 100 帧输出一次 `CustomOsd doWork start/end: channel=..., time=HH:MM:SS.mmm`。
+6. **延迟日志**：每路每 100 帧输出一次平均延迟 `CustomOsd output latency avg: channel=..., frames=100, decode_to_output=...ms`，表示 `mFrame->mTimestamp`（解码时刻）到 customosd 输出时刻差值的滑动平均。
 
 ## 4. 流水线要求
 
 ```
-decode → resize(origin_cache_interval>0) → yolov5/yolox → bytetrack → customosd → encode/qt_display/...
+decode → resize → yolov5/yolox → bytetrack → customosd → encode/qt_display/...
 ```
 
 * 上游必须包含 **bytetrack**，否则无法获取 `track_id`，拌线与过线保存不会生效。
-* 若 pipeline 含 **resize** 且需要过线保存原图，请在 resize 配置中设置 `origin_cache_interval`（建议 5）。
 * ROI / 拌线坐标基于 resize 后的画面尺寸配置（与检测坐标系一致）。
 
 ## 5. 示例

@@ -10,10 +10,8 @@
 
 #include <chrono>
 #include <nlohmann/json.hpp>
-#include <opencv2/opencv.hpp>
 
 #include "common/logger.h"
-#include "common/origin_frame_cache.h"
 #include "element_factory.h"
 #include "resize.h"
 namespace sophon_stream {
@@ -38,28 +36,9 @@ common::ErrorCode Resize::initInternal(const std::string& json) {
   crop_left = configure.value(CONFIG_INTERNAL_CROP_LEFT_FILED, 0);
   crop_h = configure.value(CONFIG_INTERNAL_CROP_H_FILED, 0);
   crop_w = configure.value(CONFIG_INTERNAL_CROP_W_FILED, 0);
-  mOriginCacheInterval =
-      configure.value(CONFIG_INTERNAL_ORIGIN_CACHE_INTERVAL_FIELD, 0);
-  mOriginCacheDepth =
-      configure.value(CONFIG_INTERNAL_ORIGIN_CACHE_DEPTH_FIELD, 3);
-  mOriginCacheMaxGap =
-      configure.value(CONFIG_INTERNAL_ORIGIN_CACHE_MAX_GAP_FIELD, 0);
-
-  if (mOriginCacheInterval > 0) {
-    if (mOriginCacheMaxGap <= 0) {
-      mOriginCacheMaxGap = mOriginCacheInterval * 2;
-    }
-    common::OriginFrameCache::getInstance().configure(
-        static_cast<size_t>(mOriginCacheDepth), mOriginCacheMaxGap);
-    IVS_INFO(
-        "Resize origin cache enabled: interval={}, depth={}, max_gap={}",
-        mOriginCacheInterval, mOriginCacheDepth, mOriginCacheMaxGap);
-  }
 
   return common::ErrorCode::SUCCESS;
 }
-
-
 
 common::ErrorCode Resize::resize_work(
     std::shared_ptr<common::ObjectMetadata> resObj) {
@@ -94,15 +73,6 @@ common::ErrorCode Resize::resize_work(
     padding_attr.dst_crop_h = (unsigned int)dst_h;
     padding_attr.dst_crop_w = (unsigned int)dst_w;
 
-    if (mOriginCacheInterval > 0 && resObj->mFrame->mSpData &&
-        resObj->mFrame->mFrameId % mOriginCacheInterval == 0) {
-      cv::Mat origin_mat;
-      cv::bmcv::toMAT(resObj->mFrame->mSpData.get(), origin_mat);
-      common::OriginFrameCache::getInstance().put(
-          resObj->mFrame->mChannelId, resObj->mFrame->mFrameId,
-          resObj->mFrame->mTimestamp, std::move(origin_mat));
-    }
-
     ret = bmcv_image_vpp_convert_padding(resObj->mFrame->mHandle, 1, src_image,
                                          resize_image.get(), &padding_attr,
                                          &crop_rect);
@@ -131,10 +101,31 @@ common::ErrorCode Resize::doWork(int dataPipeId) {
 
   auto objectMetadata = std::static_pointer_cast<common::ObjectMetadata>(data);
 
+  bool should_log = false;
+  int channel_id = -1;
+  std::string start_time;
+  if (objectMetadata->mFrame != nullptr &&
+      objectMetadata->mFrame->mSpData != nullptr &&
+      !objectMetadata->mFrame->mEndOfStream) {
+    channel_id = objectMetadata->mFrame->mChannelId;
+    start_time = common::formatTimeOfDayMs();
+    should_log = mWorkTimeLogGate.tick(channel_id);
+    if (should_log) {
+      IVS_INFO("Resize doWork start: channel={}, time={}", channel_id,
+               start_time);
+    }
+  }
+
   if (objectMetadata->mFrame != nullptr &&
       objectMetadata->mFrame->mSpData != nullptr) {
     resize_work(objectMetadata);
   }
+
+  if (should_log) {
+    IVS_INFO("Resize doWork end: channel={}, time={}", channel_id,
+             common::formatTimeOfDayMs());
+  }
+
   mFpsProfiler.add(1);
   // usleep(10);
   int channel_id_internal = objectMetadata->mFrame->mChannelIdInternal;

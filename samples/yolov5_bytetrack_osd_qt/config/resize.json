@@ -5,10 +5,7 @@
     "crop_w": 0,
     "crop_h": 0,
     "crop_top": 0,
-    "crop_left": 0,
-    "origin_cache_interval": 5,
-    "origin_cache_depth": 3,
-    "origin_cache_max_gap": 10
+    "crop_left": 0
   },
   "shared_object": "../../build/lib/libresize.so",
   "name": "resize",

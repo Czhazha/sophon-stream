@@ -6,6 +6,7 @@
 // third-party components.
 //
 //===----------------------------------------------------------------------===//
+#include <csignal>
 #include <functional>
 
 #include "draw_funcs.h"
@@ -449,6 +450,17 @@ void stopChannel(const httplib::Request& request, httplib::Response& response) {
 std::mutex mtx;
 std::condition_variable stop_cv;
 
+static void handleStopSignal(int) { stop_cv.notify_one(); }
+
+static void installStopSignalHandlers() {
+  struct sigaction sa {};
+  sa.sa_handler = handleStopSignal;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGINT, &sa, nullptr);
+  sigaction(SIGTERM, &sa, nullptr);
+}
+
 int main(int argc, char* argv[]) {
   const char* keys =
       "{demo_config_path | "
@@ -473,12 +485,7 @@ int main(int argc, char* argv[]) {
   nlohmann::json engine_json;
   demo_config demo_json = parse_demo_json(demo_config_fpath);
 
-  auto handler = [](int sig) -> void {
-    stop_cv.notify_one();
-  };
-
-  signal(SIGINT, handler);
-  signal(SIGTERM, handler);
+  installStopSignalHandlers();
 
   // 启动每个graph, graph之间没有联系，可以是完全不同的配置
   istream.open(demo_json.engine_config_file);
@@ -534,6 +541,8 @@ int main(int argc, char* argv[]) {
       std::bind(stopChannel, std::placeholders::_1, std::placeholders::_2));
 
   init_engine(engine, engine_json, sinkHandler, graph_src_id_port_map);
+  // QApplication may override SIGINT; restore our handler for graceful stop.
+  installStopSignalHandlers();
 
   for (auto& channel_config : demo_json.channel_configs) {
     int graph_id = channel_config["graph_id"];  // 默认是graph0
@@ -576,5 +585,6 @@ int main(int argc, char* argv[]) {
   IVS_INFO("total time cost {} us.", totalCost);
   double fps = static_cast<double>(frameCount) / totalCost;
   IVS_INFO("frame count is {} | fps is {} fps.", frameCount, fps * 1000000);
+  listenthread->stop();
   return 0;
 }

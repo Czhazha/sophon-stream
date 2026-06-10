@@ -320,7 +320,32 @@ common::ErrorCode Yolov5::doWork(int dataPipeId) {
     }
   }
 
+  struct WorkTimeLogEntry {
+    int channel_id;
+    std::string start_time;
+  };
+  std::vector<WorkTimeLogEntry> work_time_logs;
+  for (auto& objectMetadata : pendingObjectMetadatas) {
+    if (objectMetadata->mFrame == nullptr ||
+        objectMetadata->mFrame->mEndOfStream) {
+      continue;
+    }
+    const int channel_id = objectMetadata->mFrame->mChannelId;
+    if (!mWorkTimeLogGate.tick(channel_id)) {
+      continue;
+    }
+    work_time_logs.push_back(
+        {channel_id, common::formatTimeOfDayMs()});
+    IVS_INFO("Yolov5 doWork start: channel={}, time={}", channel_id,
+             work_time_logs.back().start_time);
+  }
+
   process(objectMetadatas, dataPipeId);
+
+  for (const auto& entry : work_time_logs) {
+    IVS_INFO("Yolov5 doWork end: channel={}, time={}", entry.channel_id,
+             common::formatTimeOfDayMs());
+  }
 
   for (auto& objectMetadata : pendingObjectMetadatas) {
     int channel_id_internal = objectMetadata->mFrame->mChannelIdInternal;

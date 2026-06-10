@@ -13,6 +13,7 @@
 
 #include "common/object_metadata.h"
 #include "common/profiler.h"
+#include "common/work_time_log.h"
 #include "element.h"
 
 namespace sophon_stream {
@@ -38,21 +39,13 @@ class Resize : public ::sophon_stream::framework::Element {
   static constexpr const char* CONFIG_INTERNAL_CROP_LEFT_FILED = "crop_left";
   static constexpr const char* CONFIG_INTERNAL_CROP_H_FILED = "crop_h";
   static constexpr const char* CONFIG_INTERNAL_CROP_W_FILED = "crop_w";
-  static constexpr const char* CONFIG_INTERNAL_ORIGIN_CACHE_INTERVAL_FIELD =
-      "origin_cache_interval";
-  static constexpr const char* CONFIG_INTERNAL_ORIGIN_CACHE_DEPTH_FIELD =
-      "origin_cache_depth";
-  static constexpr const char* CONFIG_INTERNAL_ORIGIN_CACHE_MAX_GAP_FIELD =
-      "origin_cache_max_gap";
 
   int dst_h, dst_w;
   int crop_top,crop_left;
   int crop_h,crop_w;
-  int mOriginCacheInterval = 0;
-  int mOriginCacheDepth = 3;
-  int mOriginCacheMaxGap = 0;
 
  private:
+  ::sophon_stream::common::WorkTimeLogGate mWorkTimeLogGate;
   ::sophon_stream::common::FpsProfiler mFpsProfiler;
 };
 

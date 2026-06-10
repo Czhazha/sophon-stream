@@ -18,6 +18,7 @@
 
 #include "common/object_metadata.h"
 #include "common/profiler.h"
+#include "common/work_time_log.h"
 #include "element.h"
 #include "geometry_utils.h"
 
@@ -70,8 +71,8 @@ class CustomOsd : public ::sophon_stream::framework::Element {
  private:
   void filterByRoi(std::shared_ptr<common::ObjectMetadata> objectMetadata,
                    const ChannelRule& rule);
-  void checkLineCrossing(std::shared_ptr<common::ObjectMetadata> objectMetadata,
-                         const ChannelRule& rule, const cv::Mat& osd_frame);
+  bool checkLineCrossing(std::shared_ptr<common::ObjectMetadata> objectMetadata,
+                         const ChannelRule& rule);
   void drawOverlays(const ChannelRule& rule, cv::Mat& frame, float scale_x = 1.0f,
                     float scale_y = 1.0f);
   void drawTrackBoxes(std::shared_ptr<common::ObjectMetadata> objectMetadata,
@@ -80,7 +81,7 @@ class CustomOsd : public ::sophon_stream::framework::Element {
   void draw(std::shared_ptr<common::ObjectMetadata> objectMetadata);
   bool ensureSaveDir();
   bool saveCrossingImage(std::shared_ptr<common::ObjectMetadata> objectMetadata,
-                         const ChannelRule& rule, const cv::Mat& osd_frame);
+                         const cv::Mat& osd_frame, const cv::Mat& clean_frame);
   void recordOutputLatency(int channel_id, std::int64_t latency_ms);
 
   static constexpr int LATENCY_LOG_INTERVAL = 100;
@@ -96,6 +97,7 @@ class CustomOsd : public ::sophon_stream::framework::Element {
   std::unordered_map<int, std::unordered_map<int, TrackCrossState>> mTrackStates;
   std::unordered_set<std::string> mSavedCrossings;
   std::unordered_map<int, LatencyStats> mLatencyStats;
+  ::sophon_stream::common::WorkTimeLogGate mWorkTimeLogGate;
 
   ::sophon_stream::common::FpsProfiler mFpsProfiler;
 };

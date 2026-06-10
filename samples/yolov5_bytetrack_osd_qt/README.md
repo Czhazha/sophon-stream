@@ -75,7 +75,7 @@ BM1684/BM1684X 交叉编译需 sophon-qt；BM1688 需 arm 公版 qt，参见 [yo
 | [yolov5_group.json](./config/yolov5_group.json) | YOLOv5 检测 |
 | [bytetrack.json](./config/bytetrack.json) | 跟踪 |
 | [customosd.json](./config/customosd.json) | ROI 过滤、拌线绘制、过线抓拍 |
-| [resize.json](./config/resize.json) | 缩放；`origin_cache_interval` 开启原图 CPU 采样缓存供过线抓拍 |
+| [resize.json](./config/resize.json) | 缩放 |
 | [qt_display.json](./config/qt_display.json) | Qt 拼接显示（2 行 × 3 列） |
 
 **customosd 要点**：
@@ -84,9 +84,9 @@ BM1684/BM1684X 交叉编译需 sophon-qt；BM1688 需 arm 公版 qt，参见 [yo
 * `rois`：多边形 ROI，检测框中心不在 ROI 内则不显示；
 * `lines`：拌线端点，用于过线判断；
 * `save_path`：过线图片保存目录；**留空或不配置则不保存**；
-* `save_image_mode`：仅当 `save_path` 非空时生效。`clean` 保存干净原图，`annotated` 保存带 ROI/拌线/跟踪框的原图；
-* 过线保存原图需在 [resize.json](./config/resize.json) 中设置 `origin_cache_interval`（如 `5` 表示 5 帧采 1 帧缓存到 CPU）。
-* customosd 每路每 100 帧输出一次 `decode_to_output` 平均延迟（毫秒），用于量化 pipeline 延迟。
+* `save_image_mode`：仅当 `save_path` 非空时生效。`clean` 保存无标注画面，`annotated` 保存带 ROI/拌线/跟踪框的画面；
+* decode / resize / yolov5 / customosd 每路每 100 帧各输出一次 `doWork start/end` 日志，时间格式为 `HH:MM:SS.mmm`，可自行计算各模块耗时。
+* customosd 每路每 100 帧输出一次 `decode_to_output` 平均延迟（毫秒），用于量化整条 pipeline 延迟。
 
 详细参数见 [customosd README](../../element/tools/customosd/README.md)。
 

@@ -10,6 +10,7 @@
 #ifndef SOPHON_STREAM_ELEMENT_YOLOV5_H_
 #define SOPHON_STREAM_ELEMENT_YOLOV5_H_
 
+#include "common/work_time_log.h"
 #include "element_factory.h"
 #include "group.h"
 #include "yolov5_context.h"
@@ -95,6 +96,7 @@ class Yolov5 : public ::sophon_stream::framework::Element {
 
   std::string mFpsProfilerName;
   ::sophon_stream::common::FpsProfiler mFpsProfiler;
+  ::sophon_stream::common::WorkTimeLogGate mWorkTimeLogGate;
 
   common::ErrorCode initContext(const std::string& json);
   void process(common::ObjectMetadatas& objectMetadatas, int dataPipeId);

@@ -105,6 +105,10 @@ IMG_DIR/
   └──******.jpg
 ```
 
+### 耗时日志
+
+每路每 100 帧输出一次 `Decode doWork start/end: channel=..., time=HH:MM:SS.mmm`，可在日志中自行计算 decode 模块单帧耗时。
+
 > **注意**：
 >1. 输入RTSP数据流的URL须以`rtsp://`开头
 >2. 输入RTMP数据流的URL须以`rtmp://`开头

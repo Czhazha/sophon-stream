@@ -9,6 +9,7 @@
 
 #include "qt_display.h"
 
+#include <QMetaObject>
 #include <QScreen>
 
 #include "common/logger.h"
@@ -18,9 +19,35 @@ namespace sophon_stream {
 namespace element {
 namespace qt_display {
 
-QtDisplay::QtDisplay() {}
-QtDisplay::~QtDisplay() {
+QtDisplay::QtDisplay() : qapp(nullptr), qwidget_ptr(nullptr), layout(nullptr) {}
+
+void QtDisplay::requestQtQuit() {
+  if (qapp) {
+    QMetaObject::invokeMethod(qapp, "quit", Qt::QueuedConnection);
+  }
+}
+
+void QtDisplay::shutdownQt() {
+  if (!qt_thread.joinable()) return;
+  if (qapp) {
+    // Only break the event loop. Destroying QApplication/QWidget here unloads
+    // the linuxfb/fl2000 platform plugin and segfaults; let the process exit
+    // reclaim the memory instead.
+    QMetaObject::invokeMethod(qapp, "quit", Qt::QueuedConnection);
+  }
   qt_thread.join();
+}
+
+void QtDisplay::onStop() {
+  std::call_once(qt_shutdown_once_, [this]() {
+    IVS_INFO("Qt display stopping, element id: {0:d}", getId());
+    shutdownQt();
+    IVS_INFO("Qt display stopped, element id: {0:d}", getId());
+  });
+}
+
+QtDisplay::~QtDisplay() {
+  std::call_once(qt_shutdown_once_, [this]() { shutdownQt(); });
   for (auto& [k, v] : mFpsProfilers) {
     delete v;
   }
@@ -62,6 +89,8 @@ int QtDisplay::qt_func() {
   }
   ui_cv.notify_all();
 
+  // Intentionally do not delete qapp/qwidget after exec() returns: tearing down
+  // the linuxfb/fl2000 platform plugin crashes. The process exits right after.
   return qapp->exec();
 }
 
@@ -163,7 +192,9 @@ common::ErrorCode QtDisplay::doWork(int dataPipeId) {
           label_idx, label_vec.size(), channel_id);
   }
 
-  if (stopped_num == channel_ids.size()) qapp->quit();
+  if (stopped_num == channel_ids.size() && qapp) {
+    QMetaObject::invokeMethod(qapp, "quit", Qt::QueuedConnection);
+  }
 
   int channel_id_internal = objectMetadata->mFrame->mChannelIdInternal;
   int outDataPipeId =

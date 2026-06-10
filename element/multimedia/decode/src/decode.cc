@@ -441,6 +441,7 @@ common::ErrorCode Decode::process(
     const std::shared_ptr<ChannelTask>& channelTask,
     const std::shared_ptr<ChannelInfo>& channelInfo) {
   std::shared_ptr<common::ObjectMetadata> objectMetadata;
+  const std::string start_time = common::formatTimeOfDayMs();
   common::ErrorCode ret = channelInfo->mSpDecoder->process(objectMetadata);
   int graphId = channelTask->request.graphId;
   mFpsProfiler.add(1);
@@ -460,6 +461,17 @@ common::ErrorCode Decode::process(
   objectMetadata->mSkipElements = skip_elements;
   objectMetadata->mFrame->mChannelId = channel_id;
   objectMetadata->mFrame->mChannelIdInternal = mChannelIdInternalMap[graphId][channel_id];
+
+  if (ret != common::ErrorCode::STREAM_END && objectMetadata->mFrame != nullptr &&
+      !objectMetadata->mFrame->mEndOfStream &&
+      objectMetadata->mFrame->mSpData != nullptr) {
+    if (mWorkTimeLogGate.tick(channel_id)) {
+      IVS_INFO("Decode doWork start: channel={}, time={}", channel_id,
+               start_time);
+      IVS_INFO("Decode doWork end: channel={}, time={}", channel_id,
+               common::formatTimeOfDayMs());
+    }
+  }
 
   // push data to next element
   if (objectMetadata->mFilter && !objectMetadata->mFrame->mEndOfStream &&

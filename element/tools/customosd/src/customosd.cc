@@ -18,7 +18,6 @@
 
 #include "common/common_defs.h"
 #include "common/logger.h"
-#include "common/origin_frame_cache.h"
 #include "element_factory.h"
 
 namespace sophon_stream {
@@ -185,10 +184,10 @@ void CustomOsd::filterByRoi(
   objectMetadata->mTrackedObjectMetadatas = filtered_tracks;
 }
 
-void CustomOsd::checkLineCrossing(
+bool CustomOsd::checkLineCrossing(
     std::shared_ptr<common::ObjectMetadata> objectMetadata,
-    const ChannelRule& rule, const cv::Mat& osd_frame) {
-  if (rule.lines.empty()) return;
+    const ChannelRule& rule) {
+  if (rule.lines.empty()) return false;
 
   const int channel_id = objectMetadata->mFrame->mChannelId;
   bool need_save = false;
@@ -231,14 +230,22 @@ void CustomOsd::checkLineCrossing(
     }
   }
 
-  if (!need_save || mSavePath.empty()) return;
-  saveCrossingImage(objectMetadata, rule, osd_frame);
+  return need_save && !mSavePath.empty();
 }
 
 bool CustomOsd::saveCrossingImage(
     std::shared_ptr<common::ObjectMetadata> objectMetadata,
-    const ChannelRule& rule, const cv::Mat& osd_frame) {
+    const cv::Mat& osd_frame, const cv::Mat& clean_frame) {
   if (!ensureSaveDir()) return false;
+
+  const cv::Mat& source =
+      mSaveImageMode == SaveImageMode::ANNOTATED ? osd_frame : clean_frame;
+  if (source.empty()) {
+    IVS_WARN("CustomOsd crossing save skipped, empty frame for channel={}, frame={}",
+             objectMetadata->mFrame->mChannelId,
+             objectMetadata->mFrame->mFrameId);
+    return false;
+  }
 
   const int channel_id = objectMetadata->mFrame->mChannelId;
   std::string img_file =
@@ -246,43 +253,7 @@ bool CustomOsd::saveCrossingImage(
       std::to_string(objectMetadata->mFrame->mFrameId) + "_" +
       std::to_string(objectMetadata->mFrame->mTimestamp) + ".jpg";
 
-  cv::Mat save_mat;
-  common::CachedOriginFrame cached_origin;
-  const bool has_cached_origin = common::OriginFrameCache::getInstance().getNearest(
-      channel_id, objectMetadata->mFrame->mFrameId, cached_origin);
-
-  if (has_cached_origin) {
-    save_mat = cached_origin.image.clone();
-    if (cached_origin.frame_id != objectMetadata->mFrame->mFrameId) {
-      IVS_WARN(
-          "CustomOsd crossing save uses cached origin frame {} for detection "
-          "frame {}, gap={}, max_gap={}",
-          cached_origin.frame_id, objectMetadata->mFrame->mFrameId,
-          objectMetadata->mFrame->mFrameId - cached_origin.frame_id,
-          common::OriginFrameCache::getInstance().getMaxFrameGap());
-    }
-    if (mSaveImageMode == SaveImageMode::ANNOTATED && !osd_frame.empty() &&
-        osd_frame.cols > 0 && osd_frame.rows > 0) {
-      const float scale_x =
-          static_cast<float>(save_mat.cols) / static_cast<float>(osd_frame.cols);
-      const float scale_y =
-          static_cast<float>(save_mat.rows) / static_cast<float>(osd_frame.rows);
-      drawOverlays(rule, save_mat, scale_x, scale_y);
-      drawTrackBoxes(objectMetadata, save_mat, scale_x, scale_y);
-    }
-  } else if (!osd_frame.empty()) {
-    IVS_WARN(
-        "CustomOsd origin cache miss, fallback to osd frame for channel={}, "
-        "frame={}",
-        channel_id, objectMetadata->mFrame->mFrameId);
-    save_mat = osd_frame.clone();
-  } else {
-    IVS_WARN("CustomOsd no image available for crossing save, channel={}",
-             channel_id);
-    return false;
-  }
-
-  if (!cv::imwrite(img_file, save_mat)) {
+  if (!cv::imwrite(img_file, source)) {
     IVS_WARN("CustomOsd failed to save image: {}", img_file);
     return false;
   }
@@ -382,9 +353,19 @@ void CustomOsd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
   cv::Mat frame_to_draw;
   cv::bmcv::toMAT(&image, frame_to_draw);
 
+  const bool need_save = checkLineCrossing(objectMetadata, rule);
+
+  cv::Mat clean_frame;
+  if (need_save && mSaveImageMode == SaveImageMode::CLEAN) {
+    clean_frame = frame_to_draw.clone();
+  }
+
   drawOverlays(rule, frame_to_draw);
   drawTrackBoxes(objectMetadata, frame_to_draw);
-  checkLineCrossing(objectMetadata, rule, frame_to_draw);
+
+  if (need_save) {
+    saveCrossingImage(objectMetadata, frame_to_draw, clean_frame);
+  }
 
   std::shared_ptr<bm_image> image_storage(
       new bm_image, [](bm_image* img) {
@@ -452,10 +433,26 @@ common::ErrorCode CustomOsd::doWork(int dataPipeId) {
   if (!data) return common::ErrorCode::SUCCESS;
 
   auto objectMetadata = std::static_pointer_cast<common::ObjectMetadata>(data);
-  if (!(objectMetadata->mFrame->mEndOfStream) &&
+  const bool should_process =
+      !(objectMetadata->mFrame->mEndOfStream) &&
       std::find(objectMetadata->mSkipElements.begin(),
                 objectMetadata->mSkipElements.end(),
-                getId()) == objectMetadata->mSkipElements.end()) {
+                getId()) == objectMetadata->mSkipElements.end();
+
+  bool should_log = false;
+  int channel_id = -1;
+  std::string start_time;
+  if (should_process) {
+    channel_id = objectMetadata->mFrame->mChannelId;
+    start_time = common::formatTimeOfDayMs();
+    should_log = mWorkTimeLogGate.tick(channel_id);
+    if (should_log) {
+      IVS_INFO("CustomOsd doWork start: channel={}, time={}", channel_id,
+               start_time);
+    }
+  }
+
+  if (should_process) {
     draw(objectMetadata);
     mFpsProfiler.add(1);
 
@@ -467,6 +464,11 @@ common::ErrorCode CustomOsd::doWork(int dataPipeId) {
     const std::int64_t decode_time_us = objectMetadata->mFrame->mTimestamp;
     const std::int64_t latency_ms = (output_time_us - decode_time_us) / 1000;
     recordOutputLatency(objectMetadata->mFrame->mChannelId, latency_ms);
+  }
+
+  if (should_log) {
+    IVS_INFO("CustomOsd doWork end: channel={}, time={}", channel_id,
+             common::formatTimeOfDayMs());
   }
 
   int channel_id_internal = objectMetadata->mFrame->mChannelIdInternal;

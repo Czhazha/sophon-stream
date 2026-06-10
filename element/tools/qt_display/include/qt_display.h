@@ -25,6 +25,8 @@ class QtDisplay : public ::sophon_stream::framework::Element {
 
   common::ErrorCode doWork(int dataPipeId) override;
 
+  void onStop() override;
+
   static constexpr const char* CONFIG_INTERNAL_SCREEN_WIDTH = "width";
   static constexpr const char* CONFIG_INTERNAL_SCREEN_HEIGHT = "height";
 
@@ -32,6 +34,8 @@ class QtDisplay : public ::sophon_stream::framework::Element {
   static constexpr const char* CONFIG_INTERNAL_COLS = "cols";
 
   int qt_func();
+  void requestQtQuit();
+  void shutdownQt();
 
  private:
   QApplication* qapp;
@@ -55,6 +59,7 @@ class QtDisplay : public ::sophon_stream::framework::Element {
   std::unordered_set<int> channel_ids;
   std::unordered_map<int, int> channel_id_to_label_idx;
   std::atomic<int> stopped_num;
+  std::once_flag qt_shutdown_once_;
 
   // std::vector<::sophon_stream::common::FpsProfiler*> mFpsProfilers;
   std::unordered_map<unsigned int, common::FpsProfiler*> mFpsProfilers;

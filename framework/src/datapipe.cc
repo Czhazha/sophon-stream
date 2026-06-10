@@ -12,7 +12,7 @@
 namespace sophon_stream {
 namespace framework {
 
-#define DEFAULT_DATA_PIPE_CAPACITY 20
+#define DEFAULT_DATA_PIPE_CAPACITY 5
 
 DataPipe::DataPipe() : mCapacity(DEFAULT_DATA_PIPE_CAPACITY) {}
 

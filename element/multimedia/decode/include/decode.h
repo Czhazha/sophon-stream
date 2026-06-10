@@ -13,6 +13,7 @@
 #include <dlfcn.h>
 #include <sys/prctl.h>
 
+#include "common/work_time_log.h"
 #include "decoder.h"
 #include "element_factory.h"
 
@@ -182,6 +183,8 @@ class Decode : public ::sophon_stream::framework::Element {
 
   common::ErrorCode parse_channel_task(
       std::shared_ptr<ChannelTask>& channelTask);
+
+  ::sophon_stream::common::WorkTimeLogGate mWorkTimeLogGate;
 
   ::sophon_stream::common::FpsProfiler mFpsProfiler;
 
