@@ -10,6 +10,7 @@
 
 #include "BMLabel.h"
 #include "common/object_metadata.h"
+#include "common/work_time_log.h"
 #include "element.h"
 
 namespace sophon_stream {
@@ -63,6 +64,7 @@ class QtDisplay : public ::sophon_stream::framework::Element {
 
   // std::vector<::sophon_stream::common::FpsProfiler*> mFpsProfilers;
   std::unordered_map<unsigned int, common::FpsProfiler*> mFpsProfilers;
+  ::sophon_stream::common::WorkTimeLogGate mWorkTimeLogGate;
   int thread_num;
 };
 

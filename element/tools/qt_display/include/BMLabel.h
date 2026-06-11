@@ -42,6 +42,11 @@ class BMLabel : public QLabel {
   void process_pending();
 
  private:
+  // Legacy OpenCV CPU path (toMAT + resize + cvtColor), kept for perf comparison.
+  QImage convert_frame_opencv(const std::shared_ptr<bm_image>& bmimg_ptr,
+                              float tmp_fps);
+
+  // VPP hardware path: bmcv_image_vpp_convert (resize + YUV->RGB) + small D2H.
   QImage convert_frame(const std::shared_ptr<bm_image>& bmimg_ptr, float tmp_fps);
 
   QPixmap image_pixmap;

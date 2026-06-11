@@ -13,6 +13,7 @@
 #include <sys/time.h>
 
 #include <fstream>
+#include <map>
 
 #include <opencv2/opencv.hpp>
 
@@ -262,6 +263,8 @@ bool CustomOsd::saveCrossingImage(
   return true;
 }
 
+#if 0
+// Legacy OpenCV draw path: toMAT -> cv draw -> toBMI (slow on 1080p).
 void CustomOsd::drawOverlays(const ChannelRule& rule, cv::Mat& frame,
                              float scale_x, float scale_y) {
   for (const auto& roi : rule.rois) {
@@ -386,6 +389,165 @@ void CustomOsd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
                                image_storage.get(), &frame);
     bm_image_destroy(*image_storage);
     *image_storage = frame;
+  }
+
+  objectMetadata->mFrame->mSpDataOsd = image_storage;
+  objectMetadata->mFrame->mSpData.reset();
+}
+#endif
+
+void CustomOsd::drawOverlaysBmcv(bm_handle_t handle, const ChannelRule& rule,
+                                 bm_image& frame) {
+  const bmcv_color_t roi_color{0, 255, 0};
+  const bmcv_color_t line_color{255, 0, 0};
+  const int thickness = 2;
+
+  for (const auto& roi : rule.rois) {
+    if (roi.size() < 3) continue;
+    const int line_num = static_cast<int>(roi.size());
+    std::vector<bmcv_point_t> starts(line_num);
+    std::vector<bmcv_point_t> ends(line_num);
+    for (int i = 0; i < line_num; ++i) {
+      const int next = (i + 1) % line_num;
+      starts[i] = {roi[i].mX, roi[i].mY};
+      ends[i] = {roi[next].mX, roi[next].mY};
+    }
+    if (BM_SUCCESS != bmcv_image_draw_lines(handle, frame, starts.data(),
+                                            ends.data(), line_num, roi_color,
+                                            thickness)) {
+      IVS_WARN("CustomOsd bmcv draw roi lines failed");
+    }
+  }
+
+  for (const auto& line : rule.lines) {
+    if (line.size() != 2) continue;
+    bmcv_point_t start = {line[0].mX, line[0].mY};
+    bmcv_point_t end = {line[1].mX, line[1].mY};
+    if (BM_SUCCESS != bmcv_image_draw_lines(handle, frame, &start, &end, 1,
+                                            line_color, thickness)) {
+      IVS_WARN("CustomOsd bmcv draw trip line failed");
+    }
+  }
+}
+
+void CustomOsd::drawTrackBoxesBmcv(
+    bm_handle_t handle, std::shared_ptr<common::ObjectMetadata> objectMetadata,
+    bm_image& frame) {
+  const int colors_num = static_cast<int>(kColors.size());
+  const int thickness = 2;
+  const float font_scale = 1.0f;
+
+  std::map<int, std::vector<bmcv_rect_t>> rects_by_color;
+  for (size_t i = 0; i < objectMetadata->mDetectedObjectMetadatas.size(); ++i) {
+    const auto& det = objectMetadata->mDetectedObjectMetadatas[i];
+    int track_id = -1;
+    if (i < objectMetadata->mTrackedObjectMetadatas.size()) {
+      track_id = objectMetadata->mTrackedObjectMetadatas[i]->mTrackId;
+    }
+    const int color_idx =
+        track_id >= 0 ? track_id % colors_num : static_cast<int>(i % colors_num);
+
+    bmcv_rect_t rect;
+    rect.start_x = det->mBox.mX;
+    rect.start_y = det->mBox.mY;
+    rect.crop_w = det->mBox.mWidth;
+    rect.crop_h = det->mBox.mHeight;
+    rects_by_color[color_idx].push_back(rect);
+  }
+
+  for (auto& entry : rects_by_color) {
+    const auto& bgr = kColors[entry.first];
+    auto& rects = entry.second;
+    if (rects.empty()) continue;
+    if (BM_SUCCESS != bmcv_image_draw_rectangle(
+                          handle, frame, static_cast<int>(rects.size()),
+                          rects.data(), thickness, bgr[2], bgr[1], bgr[0])) {
+      IVS_WARN("CustomOsd bmcv draw rectangle failed");
+    }
+  }
+
+  if (!mPutText) return;
+
+  for (size_t i = 0; i < objectMetadata->mDetectedObjectMetadatas.size(); ++i) {
+    const auto& det = objectMetadata->mDetectedObjectMetadatas[i];
+    int track_id = -1;
+    if (i < objectMetadata->mTrackedObjectMetadatas.size()) {
+      track_id = objectMetadata->mTrackedObjectMetadatas[i]->mTrackId;
+    }
+    const int color_idx =
+        track_id >= 0 ? track_id % colors_num : static_cast<int>(i % colors_num);
+    const auto& bgr = kColors[color_idx];
+
+    std::string label;
+    if (track_id >= 0) {
+      label = "id:" + std::to_string(track_id);
+    }
+    if (!mClassNames.empty() && det->mClassify >= 0 &&
+        det->mClassify < static_cast<int>(mClassNames.size())) {
+      if (!label.empty()) label += " ";
+      label += mClassNames[det->mClassify];
+    }
+    if (label.empty()) continue;
+
+    int org_x = det->mBox.mX;
+    int org_y = det->mBox.mY;
+    if (org_y < 20) org_y = 20;
+    bmcv_point_t org = {org_x, org_y};
+    bmcv_color_t color = {static_cast<unsigned char>(bgr[2]),
+                          static_cast<unsigned char>(bgr[1]),
+                          static_cast<unsigned char>(bgr[0])};
+    if (BM_SUCCESS != bmcv_image_put_text(handle, frame, label.c_str(), org,
+                                          color, font_scale, thickness)) {
+      IVS_WARN("CustomOsd bmcv put text failed");
+    }
+  }
+}
+
+void CustomOsd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
+  const int channel_id = objectMetadata->mFrame->mChannelId;
+  ChannelRule rule;
+  auto rule_it = mChannelRules.find(channel_id);
+  if (rule_it != mChannelRules.end()) {
+    rule = rule_it->second;
+  }
+
+  filterByRoi(objectMetadata, rule);
+
+  bm_image src_image = objectMetadata->mFrame->mSpDataOsd
+                           ? *(objectMetadata->mFrame->mSpDataOsd)
+                           : *(objectMetadata->mFrame->mSpData);
+  bm_handle_t handle = objectMetadata->mFrame->mHandle;
+
+  const bool need_save = checkLineCrossing(objectMetadata, rule);
+
+  std::shared_ptr<bm_image> image_storage(
+      new bm_image, [](bm_image* img) {
+        bm_image_destroy(*img);
+        delete img;
+      });
+  bm_image_create(handle, src_image.height, src_image.width, FORMAT_YUV420P,
+                  src_image.data_type, image_storage.get());
+  auto ret =
+      bm_image_alloc_dev_mem_heap_mask(*image_storage, STREAM_VPU_HEAP_MASK);
+  STREAM_CHECK(ret == 0, "Alloc Device Memory Failed! Program Terminated.");
+  bmcv_image_storage_convert(handle, 1, &src_image, image_storage.get());
+
+  cv::Mat clean_frame;
+  if (need_save && mSaveImageMode == SaveImageMode::CLEAN) {
+    cv::bmcv::toMAT(image_storage.get(), clean_frame);
+  }
+
+  drawOverlaysBmcv(handle, rule, *image_storage);
+  drawTrackBoxesBmcv(handle, objectMetadata, *image_storage);
+
+  if (need_save) {
+    if (mSaveImageMode == SaveImageMode::ANNOTATED) {
+      cv::Mat annotated_frame;
+      cv::bmcv::toMAT(image_storage.get(), annotated_frame);
+      saveCrossingImage(objectMetadata, annotated_frame, clean_frame);
+    } else {
+      saveCrossingImage(objectMetadata, clean_frame, clean_frame);
+    }
   }
 
   objectMetadata->mFrame->mSpDataOsd = image_storage;

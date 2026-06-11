@@ -12,12 +12,23 @@
 #include <QMetaObject>
 #include <QScreen>
 
+#include <chrono>
+
 #include "common/logger.h"
 #include "element_factory.h"
 
 namespace sophon_stream {
 namespace element {
 namespace qt_display {
+
+namespace {
+
+double elapsed_ms(const std::chrono::steady_clock::time_point& start,
+                  const std::chrono::steady_clock::time_point& end) {
+  return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+}  // namespace
 
 QtDisplay::QtDisplay() : qapp(nullptr), qwidget_ptr(nullptr), layout(nullptr) {}
 
@@ -123,6 +134,8 @@ common::ErrorCode QtDisplay::initInternal(const std::string& json) {
 }
 
 common::ErrorCode QtDisplay::doWork(int dataPipeId) {
+  const auto do_work_start = std::chrono::steady_clock::now();
+
   std::vector<int> inputPorts = getInputPorts();
   int inputPort = inputPorts[0];
   int outputPort = 0;
@@ -148,6 +161,14 @@ common::ErrorCode QtDisplay::doWork(int dataPipeId) {
   auto objectMetadata = std::static_pointer_cast<common::ObjectMetadata>(data);
 
   int channel_id = objectMetadata->mFrame->mChannelIdInternal;
+  bool should_log = false;
+  if (!objectMetadata->mFrame->mEndOfStream) {
+    should_log = mWorkTimeLogGate.tick(channel_id);
+    if (should_log) {
+      IVS_INFO("QtDisplay doWork start: channel={0:d}, dataPipeId={1:d}, time={2}",
+               channel_id, dataPipeId, common::formatTimeOfDayMs());
+    }
+  }
   int label_idx = 0;
   {
     std::unique_lock<std::mutex> lock(channel_mutex);
@@ -210,6 +231,18 @@ common::ErrorCode QtDisplay::doWork(int dataPipeId) {
         "{2:p}",
         getId(), outputPort, static_cast<void*>(objectMetadata.get()));
   }
+
+  if (should_log) {
+    const auto do_work_end = std::chrono::steady_clock::now();
+    const double do_work_cost_ms =
+        std::chrono::duration<double, std::milli>(do_work_end - do_work_start)
+            .count();
+    IVS_INFO(
+        "QtDisplay doWork end: channel={0:d}, dataPipeId={1:d}, cost={2:.2f} "
+        "ms, time={3}",
+        channel_id, dataPipeId, do_work_cost_ms, common::formatTimeOfDayMs());
+  }
+
   return common::ErrorCode::SUCCESS;
 }
 

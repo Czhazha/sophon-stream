@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "common/common_defs.h"
 #include "common/object_metadata.h"
 #include "common/profiler.h"
 #include "common/work_time_log.h"
@@ -73,11 +74,11 @@ class CustomOsd : public ::sophon_stream::framework::Element {
                    const ChannelRule& rule);
   bool checkLineCrossing(std::shared_ptr<common::ObjectMetadata> objectMetadata,
                          const ChannelRule& rule);
-  void drawOverlays(const ChannelRule& rule, cv::Mat& frame, float scale_x = 1.0f,
-                    float scale_y = 1.0f);
-  void drawTrackBoxes(std::shared_ptr<common::ObjectMetadata> objectMetadata,
-                      cv::Mat& frame, float scale_x = 1.0f,
-                      float scale_y = 1.0f);
+  void drawOverlaysBmcv(bm_handle_t handle, const ChannelRule& rule,
+                        bm_image& frame);
+  void drawTrackBoxesBmcv(bm_handle_t handle,
+                          std::shared_ptr<common::ObjectMetadata> objectMetadata,
+                          bm_image& frame);
   void draw(std::shared_ptr<common::ObjectMetadata> objectMetadata);
   bool ensureSaveDir();
   bool saveCrossingImage(std::shared_ptr<common::ObjectMetadata> objectMetadata,
