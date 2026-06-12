@@ -68,6 +68,8 @@ class CustomOsd : public ::sophon_stream::framework::Element {
   static constexpr const char* CONFIG_INTERNAL_LINES_FIELD = "lines";
   static constexpr const char* CONFIG_INTERNAL_LEFT_FIELD = "left";
   static constexpr const char* CONFIG_INTERNAL_TOP_FIELD = "top";
+  static constexpr const char* CONFIG_INTERNAL_DROP_INTERVAL_FIELD =
+      "drop_interval";
 
  private:
   void filterByRoi(std::shared_ptr<common::ObjectMetadata> objectMetadata,
@@ -75,15 +77,22 @@ class CustomOsd : public ::sophon_stream::framework::Element {
   bool checkLineCrossing(std::shared_ptr<common::ObjectMetadata> objectMetadata,
                          const ChannelRule& rule);
   void drawOverlaysBmcv(bm_handle_t handle, const ChannelRule& rule,
-                        bm_image& frame);
+                        bm_image& frame, float scale_x, float scale_y);
   void drawTrackBoxesBmcv(bm_handle_t handle,
                           std::shared_ptr<common::ObjectMetadata> objectMetadata,
+                          bm_image& frame, float scale_x, float scale_y);
+  void drawOverlaysOpenCv(bm_handle_t handle, const ChannelRule& rule,
                           bm_image& frame);
+  void drawTrackBoxesOpenCv(
+      bm_handle_t handle,
+      std::shared_ptr<common::ObjectMetadata> objectMetadata,
+      bm_image& frame);
   void draw(std::shared_ptr<common::ObjectMetadata> objectMetadata);
   bool ensureSaveDir();
   bool saveCrossingImage(std::shared_ptr<common::ObjectMetadata> objectMetadata,
                          const cv::Mat& osd_frame, const cv::Mat& clean_frame);
   void recordOutputLatency(int channel_id, std::int64_t latency_ms);
+  bool shouldDropFrame(int channel_id);
 
   static constexpr int LATENCY_LOG_INTERVAL = 100;
 
@@ -92,8 +101,18 @@ class CustomOsd : public ::sophon_stream::framework::Element {
   std::string mSavePath;
   SaveImageMode mSaveImageMode = SaveImageMode::CLEAN;
   std::unordered_map<int, ChannelRule> mChannelRules;
+  int mDropInterval = 1;
 
   std::mutex mStateMtx;
+  std::unordered_map<int, int> mDropFrameCounters;
+
+  // Device image buffer pool — reuses bm_image across frames to avoid
+  // per-frame alloc/free of VPU heap memory.
+  std::mutex mPoolMtx;
+  std::unordered_map<uint64_t, std::vector<bm_image>> mBufferPool;
+  bm_image allocateImage(bm_handle_t handle, int w, int h,
+                         bm_image_format_ext fmt, bm_image_data_format_ext dtype);
+  void recycleImage(bm_image img);
   std::mutex mLatencyMtx;
   std::unordered_map<int, std::unordered_map<int, TrackCrossState>> mTrackStates;
   std::unordered_set<std::string> mSavedCrossings;

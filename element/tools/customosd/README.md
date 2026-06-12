@@ -19,6 +19,7 @@ sophon-stream customosd element 是 sophon-stream 框架中的自定义可视化
   "configure": {
     "class_names_file": "../data/coco.names",
     "put_text": true,
+    "drop_interval": 1,
     "save_path": "./customosd_results",
     "save_image_mode": "clean",
     "channels": [
@@ -52,6 +53,7 @@ sophon-stream customosd element 是 sophon-stream 框架中的自定义可视化
 | :----- | :--- | :----- | :--- |
 | class_names_file | 字符串 | 无 | 类别名称文件路径，`put_text` 为 true 时用于显示类别 |
 | put_text | 布尔值 | false | 是否在检测框旁绘制 track_id 与类别名 |
+| drop_interval | 整数 | 1 | 丢帧：每 N 帧只保留第 N 帧，其余帧不处理且**不向下游传递**；`0` 或 `1` 表示不丢帧 |
 | save_path | 字符串 | 空 | 过线抓拍图片保存目录；**为空或不配置则不保存** |
 | save_image_mode | 字符串 | clean | 过线抓拍图片内容；**仅当 `save_path` 非空时生效**。`clean`：无标注画面；`annotated`：叠加 ROI、拌线与跟踪框后的画面 |
 | channels | 数组 | 无 | 各通道 ROI / 拌线规则，见下表 |
@@ -75,8 +77,9 @@ sophon-stream customosd element 是 sophon-stream 框架中的自定义可视化
 3. **过线保存**：仅当 `save_path` 非空时，对 `(channel_id, track_id, line_index)` 首次过线保存一张 JPG，文件名格式：`channel_{id}_frame_{frameId}_{timestamp}.jpg`。
    * `clean` 模式保存绘制前的当前帧；`annotated` 模式保存叠加 ROI、拌线与跟踪框后的画面。
 4. **绘制**：ROI 绿色闭合多边形；拌线红色线段；保留的跟踪目标绘制彩色框。
-5. **耗时日志**：每路每 100 帧输出一次 `CustomOsd doWork start/end: channel=..., time=HH:MM:SS.mmm`。
-6. **延迟日志**：每路每 100 帧输出一次平均延迟 `CustomOsd output latency avg: channel=..., frames=100, decode_to_output=...ms`，表示 `mFrame->mTimestamp`（解码时刻）到 customosd 输出时刻差值的滑动平均。
+5. **丢帧**：受 `drop_interval` 控制，`N>1` 时每 N 帧只保留第 N 帧（如 `3` 表示每 3 帧留 1 帧），其余帧本 element 直接返回、不转发下游。
+6. **耗时日志**：每路每 100 帧输出一次 `CustomOsd doWork start/end: channel=..., time=HH:MM:SS.mmm`。
+7. **延迟日志**：每路每 100 帧输出一次平均延迟 `CustomOsd output latency avg: channel=..., frames=100, decode_to_output=...ms`，表示 `mFrame->mTimestamp`（解码时刻）到 customosd 输出时刻差值的滑动平均。
 
 ## 4. 流水线要求
 
