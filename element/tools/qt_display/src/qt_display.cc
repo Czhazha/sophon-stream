@@ -201,8 +201,13 @@ common::ErrorCode QtDisplay::doWork(int dataPipeId) {
           mFpsProfilers[channel_id]->config(
               "qt_display_" + std::to_string(channel_id), 100);
         }
-        mFpsProfilers[channel_id]->add(1);
-        const float tmp_fps = mFpsProfilers[channel_id]->getTmpFps();
+        float tmp_fps;
+        if (objectMetadata->fps > 0.0f) {
+          tmp_fps = objectMetadata->fps;
+        } else {
+          mFpsProfilers[channel_id]->add(1);
+          tmp_fps = mFpsProfilers[channel_id]->getTmpFps();
+        }
         // Conversion happens synchronously on this worker thread; the GUI
         // thread only does the lightweight setPixmap/update.
         label_vec[label_idx]->submit_frame(bmimg_ptr, tmp_fps);

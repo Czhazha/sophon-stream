@@ -186,7 +186,7 @@ class Decode : public ::sophon_stream::framework::Element {
 
   ::sophon_stream::common::WorkTimeLogGate mWorkTimeLogGate;
 
-  ::sophon_stream::common::FpsProfiler mFpsProfiler;
+  std::unordered_map<int, ::sophon_stream::common::FpsProfiler*> mFpsProfilers;
 
   bm_handle_t handle_;
 };

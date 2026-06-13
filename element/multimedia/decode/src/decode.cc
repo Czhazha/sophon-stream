@@ -24,6 +24,10 @@ Decode::~Decode() {
     channelInfo.second->mThreadWrapper->stop();
   }
   mThreadsPool.clear();
+  for (auto& [k, v] : mFpsProfilers) {
+    delete v;
+  }
+  mFpsProfilers.clear();
   bm_dev_free(handle_);
 }
 
@@ -36,7 +40,6 @@ common::ErrorCode Decode::initInternal(const std::string& json) {
       errorCode = common::ErrorCode::PARSE_CONFIGURE_FAIL;
       break;
     }
-    mFpsProfiler.config("fps_decode", 100);
     int dev_id = getDeviceId();
     bm_dev_request(&handle_, dev_id);
   } while (false);
@@ -55,6 +58,10 @@ void Decode::onStop() {
     channelInfo.second->mThreadWrapper.reset();
   }
   mThreadsPool.clear();
+  for (auto& [k, v] : mFpsProfilers) {
+    delete v;
+  }
+  mFpsProfilers.clear();
 }
 
 common::ErrorCode Decode::doWork(int dataPipeId) {
@@ -444,7 +451,6 @@ common::ErrorCode Decode::process(
   const std::string start_time = common::formatTimeOfDayMs();
   common::ErrorCode ret = channelInfo->mSpDecoder->process(objectMetadata);
   int graphId = channelTask->request.graphId;
-  mFpsProfiler.add(1);
   if (ret == common::ErrorCode::STREAM_END) {
     // end of stream , detach thread and erase in mThreadsPool,
     std::lock_guard<std::mutex> lk(mThreadsPoolMtx);
@@ -457,6 +463,14 @@ common::ErrorCode Decode::process(
     }
   }
   int channel_id = channelTask->request.channelId;
+  if (!mFpsProfilers.count(channel_id)) {
+    auto* fps_profiler = new ::sophon_stream::common::FpsProfiler();
+    mFpsProfilers[channel_id] = fps_profiler;
+    mFpsProfilers[channel_id]->config(
+        "fps_decode_" + std::to_string(channel_id), 100);
+  }
+  mFpsProfilers[channel_id]->add(1);
+  objectMetadata->fps = mFpsProfilers[channel_id]->getTmpFps();
   std::vector<int> skip_elements = channelTask->request.skip_element;
   objectMetadata->mSkipElements = skip_elements;
   objectMetadata->mFrame->mChannelId = channel_id;
