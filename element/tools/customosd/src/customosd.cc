@@ -275,14 +275,17 @@ bool CustomOsd::checkLineCrossing(
       if (i >= objectMetadata->mTrackedObjectMetadatas.size()) break;
 
       int track_id = objectMetadata->mTrackedObjectMetadatas[i]->mTrackId;
-      common::Point<int> curr_center =
-          objectMetadata->mDetectedObjectMetadatas[i]->mBox.center();
+      const common::Rectangle<int>& curr_box =
+          objectMetadata->mDetectedObjectMetadatas[i]->mBox;
       auto& state = channel_states[track_id];
 
       if (state.has_prev) {
         for (size_t line_idx = 0; line_idx < rule.lines.size(); ++line_idx) {
-          if (!isSegmentCrossingLine(state.prev_center, curr_center,
-                                     rule.lines[line_idx])) {
+          // Trigger when the bounding-box edge starts touching the line
+          // (transitions from non-intersecting → intersecting).
+          if (!isRectIntersectingLine(curr_box, rule.lines[line_idx])) continue;
+          if (isRectIntersectingLine(state.prev_box, rule.lines[line_idx])) {
+            // Already touching in the previous frame — not a new crossing.
             continue;
           }
 
@@ -300,7 +303,7 @@ bool CustomOsd::checkLineCrossing(
         }
       }
 
-      state.prev_center = curr_center;
+      state.prev_box = curr_box;
       state.has_prev = true;
     }
   }
@@ -521,8 +524,8 @@ void CustomOsd::drawTrackBoxesBmcv(
     bm_handle_t handle, std::shared_ptr<common::ObjectMetadata> objectMetadata,
     bm_image& frame, float scale_x, float scale_y) {
   const int colors_num = static_cast<int>(kColors.size());
-  const int thickness = std::max(1, static_cast<int>(2 * scale_x));
-  const float font_scale = 1.0f * scale_x;
+  const int thickness = std::max(1, static_cast<int>(6 * scale_x));
+  const float font_scale = 3.0f * scale_x;
 
   // Single color for all boxes — one BMCV call per frame.
   const auto& bgr = kColors[0];
@@ -748,7 +751,7 @@ void CustomOsd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
   cv::Mat clean_frame;
   if (need_save && mSaveImageMode == SaveImageMode::CLEAN) {
     // Save clean frame at original resolution — read directly from source.
-    cv::bmcv::toMAT(&src_image, clean_frame);
+    cv::bmcv::toMAT(&src_image, clean_frame, true);
   }
 
   // Switch draw backend here: Bmcv (device) or OpenCv (CPU).
@@ -772,7 +775,7 @@ void CustomOsd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
       drawOverlaysBmcv(handle, rule, save_img, 1.0f, 1.0f);
       drawTrackBoxesBmcv(handle, objectMetadata, save_img, 1.0f, 1.0f);
       cv::Mat annotated_frame;
-      cv::bmcv::toMAT(&save_img, annotated_frame);
+      cv::bmcv::toMAT(&save_img, annotated_frame, true);
       saveCrossingImage(objectMetadata, annotated_frame, cv::Mat());
       recycleImage(save_img);
     } else {

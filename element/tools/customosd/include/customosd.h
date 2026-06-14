@@ -32,7 +32,7 @@ namespace element {
 namespace customosd {
 
 struct TrackCrossState {
-  common::Point<int> prev_center;
+  common::Rectangle<int> prev_box;
   bool has_prev = false;
 };
 

@@ -89,6 +89,36 @@ inline bool isSegmentCrossingLine(
   return doIntersect(prev_center, curr_center, line[0], line[1]);
 }
 
+// Check if a rectangle intersects (touches or crosses) a line segment.
+// Returns true when:
+//   - either endpoint of the line lies on/inside the rectangle, OR
+//   - the line segment crosses any of the rectangle's four edges.
+inline bool isRectIntersectingLine(
+    const common::Rectangle<int>& rect,
+    const std::vector<common::Point<int>>& line) {
+  if (line.size() != 2) return false;
+
+  const int l = rect.left(), r = rect.right();
+  const int t = rect.top(), b = rect.bottom();
+
+  // Either line endpoint inside (or on the boundary of) the rectangle?
+  if ((line[0].mX >= l && line[0].mX <= r &&
+       line[0].mY >= t && line[0].mY <= b) ||
+      (line[1].mX >= l && line[1].mX <= r &&
+       line[1].mY >= t && line[1].mY <= b)) {
+    return true;
+  }
+
+  // Check line vs the four edges of the rectangle.
+  const common::Point<int> tl(l, t), tr(r, t), bl(l, b), br(r, b);
+  if (doIntersect(line[0], line[1], tl, tr)) return true;  // top
+  if (doIntersect(line[0], line[1], bl, br)) return true;  // bottom
+  if (doIntersect(line[0], line[1], tl, bl)) return true;  // left
+  if (doIntersect(line[0], line[1], tr, br)) return true;  // right
+
+  return false;
+}
+
 }  // namespace customosd
 }  // namespace element
 }  // namespace sophon_stream
