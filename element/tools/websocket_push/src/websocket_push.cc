@@ -123,53 +123,56 @@ void WebSocketPushImpl_::onClose(connection_hdl hdl) {
 }
 
 void WebSocketPushImpl_::connectLoop() {
+  // One-time setup — init_asio() can only be called once.
+  mClient.clear_access_channels(websocketpp::log::alevel::all);
+  mClient.clear_access_channels(websocketpp::log::alevel::frame_payload);
+  mClient.init_asio();
+
+  mClient.set_open_handler(
+      websocketpp::lib::bind(&WebSocketPushImpl_::onOpen, this, _1));
+  mClient.set_fail_handler(
+      websocketpp::lib::bind(&WebSocketPushImpl_::onFail, this, _1));
+  mClient.set_close_handler(
+      websocketpp::lib::bind(&WebSocketPushImpl_::onClose, this, _1));
+
+  // Interruptible sleep — polls isRunning every 100ms so shutdown is prompt.
+  auto waitWhileRunning = [this](int seconds) {
+    for (int i = 0; i < seconds * 10 && isRunning; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  };
+
   while (isRunning) {
     try {
-      mClient.clear_access_channels(websocketpp::log::alevel::all);
-      mClient.clear_access_channels(
-          websocketpp::log::alevel::frame_payload);
-      mClient.init_asio();
-
-      mClient.set_open_handler(
-          websocketpp::lib::bind(&WebSocketPushImpl_::onOpen, this, _1));
-      mClient.set_fail_handler(
-          websocketpp::lib::bind(&WebSocketPushImpl_::onFail, this, _1));
-      mClient.set_close_handler(
-          websocketpp::lib::bind(&WebSocketPushImpl_::onClose, this, _1));
-
       websocketpp::lib::error_code ec;
       auto con = mClient.get_connection(mUri, ec);
       if (ec) {
         IVS_WARN(
             "WebSocket get_connection error for {0}: {1}, retrying in 3s...",
             mUri, ec.message());
-        std::this_thread::sleep_for(std::chrono::seconds(3));
+        waitWhileRunning(3);
         continue;
       }
 
       mHandle = con->get_handle();
       mClient.connect(con);
 
-      // run() 阻塞直到连接关闭
+      // run() blocks until the connection closes or stop() is called.
       mClient.run();
 
-      // 连接关闭后等待重连
+      // Connection closed — wait before reconnecting.
       {
         std::lock_guard<std::mutex> lock(mConnectMtx);
         mConnected = false;
       }
-      if (isRunning) {
-        std::this_thread::sleep_for(std::chrono::seconds(3));
-      }
+      waitWhileRunning(3);
     } catch (const std::exception& e) {
       IVS_WARN("WebSocket error: {0}, retrying in 3s...", e.what());
       {
         std::lock_guard<std::mutex> lock(mConnectMtx);
         mConnected = false;
       }
-      if (isRunning) {
-        std::this_thread::sleep_for(std::chrono::seconds(3));
-      }
+      waitWhileRunning(3);
     }
   }
 }

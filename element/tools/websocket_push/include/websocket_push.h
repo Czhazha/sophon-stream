@@ -10,6 +10,7 @@
 #ifndef SOPHON_STREAM_ELEMENT_WEBSOCKET_PUSH_H_
 #define SOPHON_STREAM_ELEMENT_WEBSOCKET_PUSH_H_
 
+#include <atomic>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <queue>
@@ -45,7 +46,7 @@ class WebSocketPushImpl_ {
   void onOpen(connection_hdl hdl);
   void onFail(connection_hdl hdl);
   void onClose(connection_hdl hdl);
-  bool isRunning = true;
+  std::atomic<bool> isRunning = true;
 
   std::shared_ptr<nlohmann::json> popQueue();
   size_t getQueueSize();
@@ -55,7 +56,7 @@ class WebSocketPushImpl_ {
   WSClient mClient;
   connection_hdl mHandle;
   std::string mUri;
-  bool mConnected = false;
+  std::atomic<bool> mConnected = false;
   std::mutex mConnectMtx;
   std::thread mEventThread;
 

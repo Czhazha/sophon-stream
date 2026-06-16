@@ -12,6 +12,7 @@
 
 #include <mosquitto.h>
 
+#include <atomic>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <queue>
@@ -53,12 +54,12 @@ class MqttPushImpl_ {
   std::mutex mtx;
   constexpr static int maxQueueLen = 20;
 
-  bool isRunning_ = true;
+  std::atomic<bool> isRunning_ = true;
   struct mosquitto* mMosq = nullptr;
   std::string mTopic;
   std::string mBrokerIp;
   int mBrokerPort;
-  bool mConnected = false;
+  std::atomic<bool> mConnected = false;
 
   std::string mFpsProfilerName;
   ::sophon_stream::common::FpsProfiler mFpsProfiler;
