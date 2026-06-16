@@ -208,26 +208,10 @@ common::ErrorCode CustomOsd::initInternal(const std::string& json) {
 
     if (!mSavePath.empty()) {
       ensureSaveDir();
-      auto modeIt = configure.find(CONFIG_INTERNAL_SAVE_IMAGE_MODE_FIELD);
-      if (modeIt != configure.end() && modeIt->is_string()) {
-        const std::string mode = modeIt->get<std::string>();
-        if (mode == "annotated") {
-          mSaveImageMode = SaveImageMode::ANNOTATED;
-        } else if (mode == "clean") {
-          mSaveImageMode = SaveImageMode::CLEAN;
-        } else {
-          IVS_WARN(
-              "CustomOsd unknown save_image_mode '{}', fallback to clean",
-              mode);
-          mSaveImageMode = SaveImageMode::CLEAN;
-        }
-      }
-      IVS_INFO("CustomOsd save_path enabled: {}, save_image_mode: {}",
-               mSavePath,
-               mSaveImageMode == SaveImageMode::ANNOTATED ? "annotated"
-                                                          : "clean");
+      IVS_INFO("CustomOsd save_path enabled: {}, crossing images will be saved "
+               "with line-crossing targets boxed",
+               mSavePath);
     } else {
-      mSaveImageMode = SaveImageMode::CLEAN;
       IVS_INFO("CustomOsd save_path is empty, line crossing images will not be saved");
     }
   } while (false);
@@ -259,13 +243,14 @@ void CustomOsd::filterByRoi(
   objectMetadata->mTrackedObjectMetadatas = filtered_tracks;
 }
 
-bool CustomOsd::checkLineCrossing(
+std::unordered_set<size_t> CustomOsd::checkLineCrossing(
     std::shared_ptr<common::ObjectMetadata> objectMetadata,
-    const ChannelRule& rule) {
-  if (rule.lines.empty()) return false;
+    const ChannelRule& rule, bool& need_save) {
+  need_save = false;
+  std::unordered_set<size_t> crossing_indices;
+  if (rule.lines.empty()) return crossing_indices;
 
   const int channel_id = objectMetadata->mFrame->mChannelId;
-  bool need_save = false;
 
   {
     std::lock_guard<std::mutex> lk(mStateMtx);
@@ -279,11 +264,12 @@ bool CustomOsd::checkLineCrossing(
           objectMetadata->mDetectedObjectMetadatas[i]->mBox;
       auto& state = channel_states[track_id];
 
-      if (state.has_prev) {
-        for (size_t line_idx = 0; line_idx < rule.lines.size(); ++line_idx) {
-          // Trigger when the bounding-box edge starts touching the line
-          // (transitions from non-intersecting → intersecting).
-          if (!isRectIntersectingLine(curr_box, rule.lines[line_idx])) continue;
+      bool is_crossing = false;
+      for (size_t line_idx = 0; line_idx < rule.lines.size(); ++line_idx) {
+        if (!isRectIntersectingLine(curr_box, rule.lines[line_idx])) continue;
+        is_crossing = true;
+
+        if (state.has_prev) {
           if (isRectIntersectingLine(state.prev_box, rule.lines[line_idx])) {
             // Already touching in the previous frame — not a new crossing.
             continue;
@@ -303,22 +289,28 @@ bool CustomOsd::checkLineCrossing(
         }
       }
 
+      if (is_crossing) {
+        crossing_indices.insert(i);
+      }
+
       state.prev_box = curr_box;
       state.has_prev = true;
     }
   }
 
-  return need_save && !mSavePath.empty();
+  if (mSavePath.empty()) {
+    need_save = false;
+  }
+
+  return crossing_indices;
 }
 
 bool CustomOsd::saveCrossingImage(
     std::shared_ptr<common::ObjectMetadata> objectMetadata,
-    const cv::Mat& osd_frame, const cv::Mat& clean_frame) {
+    const cv::Mat& frame) {
   if (!ensureSaveDir()) return false;
 
-  const cv::Mat& source =
-      mSaveImageMode == SaveImageMode::ANNOTATED ? osd_frame : clean_frame;
-  if (source.empty()) {
+  if (frame.empty()) {
     IVS_WARN("CustomOsd crossing save skipped, empty frame for channel={}, frame={}",
              objectMetadata->mFrame->mChannelId,
              objectMetadata->mFrame->mFrameId);
@@ -331,148 +323,14 @@ bool CustomOsd::saveCrossingImage(
       std::to_string(objectMetadata->mFrame->mFrameId) + "_" +
       std::to_string(objectMetadata->mFrame->mTimestamp) + ".jpg";
 
-//   if (!cv::imwrite(img_file, source)) {
-//     IVS_WARN("CustomOsd failed to save image: {}", img_file);
-//     return false;
-//   }
-  usleep(20 * 1000);
+  if (!cv::imwrite(img_file, frame)) {
+    IVS_WARN("CustomOsd failed to save image: {}", img_file);
+    return false;
+  }
 
   IVS_INFO("CustomOsd saved crossing image: {}", img_file);
   return true;
 }
-
-#if 0
-// Legacy OpenCV draw path: toMAT -> cv draw -> toBMI (slow on 1080p).
-void CustomOsd::drawOverlays(const ChannelRule& rule, cv::Mat& frame,
-                             float scale_x, float scale_y) {
-  for (const auto& roi : rule.rois) {
-    if (roi.size() < 3) continue;
-    std::vector<cv::Point> poly;
-    poly.reserve(roi.size());
-    for (const auto& pt : roi) {
-      poly.emplace_back(static_cast<int>(pt.mX * scale_x),
-                        static_cast<int>(pt.mY * scale_y));
-    }
-    const cv::Point* pts = poly.data();
-    int npts = static_cast<int>(poly.size());
-    cv::polylines(frame, &pts, &npts, 1, true, cv::Scalar(0, 255, 0), 2,
-                  cv::LINE_AA);
-  }
-
-  for (const auto& line : rule.lines) {
-    if (line.size() != 2) continue;
-    cv::line(frame,
-             cv::Point(static_cast<int>(line[0].mX * scale_x),
-                       static_cast<int>(line[0].mY * scale_y)),
-             cv::Point(static_cast<int>(line[1].mX * scale_x),
-                       static_cast<int>(line[1].mY * scale_y)),
-             cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
-  }
-}
-
-void CustomOsd::drawTrackBoxes(
-    std::shared_ptr<common::ObjectMetadata> objectMetadata, cv::Mat& frame,
-    float scale_x, float scale_y) {
-  const int colors_num = static_cast<int>(kColors.size());
-  const int thickness = std::max(1, static_cast<int>(2 * scale_x));
-  const float font_scale = 0.7f * scale_x;
-
-  for (size_t i = 0; i < objectMetadata->mDetectedObjectMetadatas.size(); ++i) {
-    const auto& det = objectMetadata->mDetectedObjectMetadatas[i];
-    int track_id = -1;
-    if (i < objectMetadata->mTrackedObjectMetadatas.size()) {
-      track_id = objectMetadata->mTrackedObjectMetadatas[i]->mTrackId;
-    }
-
-    const int color_idx =
-        track_id >= 0 ? track_id % colors_num : static_cast<int>(i % colors_num);
-    cv::Scalar color(kColors[color_idx][0], kColors[color_idx][1],
-                     kColors[color_idx][2]);
-
-    const int box_x = static_cast<int>(det->mBox.mX * scale_x);
-    const int box_y = static_cast<int>(det->mBox.mY * scale_y);
-    const int box_w = static_cast<int>(det->mBox.mWidth * scale_x);
-    const int box_h = static_cast<int>(det->mBox.mHeight * scale_y);
-
-    cv::rectangle(frame, cv::Point(box_x, box_y),
-                  cv::Point(box_x + box_w, box_y + box_h), color, thickness);
-
-    if (mPutText) {
-      std::string label;
-      if (track_id >= 0) {
-        label = "id:" + std::to_string(track_id);
-      }
-      if (!mClassNames.empty() &&
-          det->mClassify >= 0 &&
-          det->mClassify < static_cast<int>(mClassNames.size())) {
-        if (!label.empty()) label += " ";
-        label += mClassNames[det->mClassify];
-      }
-      if (!label.empty()) {
-        cv::putText(frame, label,
-                    cv::Point(box_x, std::max(box_y - 5, 0)),
-                    cv::FONT_HERSHEY_SIMPLEX, font_scale, color, thickness);
-      }
-    }
-  }
-}
-
-void CustomOsd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
-  const int channel_id = objectMetadata->mFrame->mChannelId;
-  ChannelRule rule;
-  auto rule_it = mChannelRules.find(channel_id);
-  if (rule_it != mChannelRules.end()) {
-    rule = rule_it->second;
-  }
-
-  filterByRoi(objectMetadata, rule);
-
-  bm_image image = objectMetadata->mFrame->mSpDataOsd
-                       ? *(objectMetadata->mFrame->mSpDataOsd)
-                       : *(objectMetadata->mFrame->mSpData);
-
-  cv::Mat frame_to_draw;
-  cv::bmcv::toMAT(&image, frame_to_draw);
-
-  const bool need_save = checkLineCrossing(objectMetadata, rule);
-
-  cv::Mat clean_frame;
-  if (need_save && mSaveImageMode == SaveImageMode::CLEAN) {
-    clean_frame = frame_to_draw.clone();
-  }
-
-  drawOverlays(rule, frame_to_draw);
-  drawTrackBoxes(objectMetadata, frame_to_draw);
-
-  if (need_save) {
-    saveCrossingImage(objectMetadata, frame_to_draw, clean_frame);
-  }
-
-  std::shared_ptr<bm_image> image_storage(
-      new bm_image, [](bm_image* img) {
-        bm_image_destroy(*img);
-        delete img;
-      });
-
-  cv::bmcv::toBMI(frame_to_draw, image_storage.get());
-  if (image_storage->image_format != FORMAT_YUV420P) {
-    bm_image frame;
-    bm_image_create(objectMetadata->mFrame->mHandle, image_storage->height,
-                    image_storage->width, FORMAT_YUV420P,
-                    image_storage->data_type, &frame);
-    auto ret =
-        bm_image_alloc_dev_mem_heap_mask(frame, STREAM_VPU_HEAP_MASK);
-    STREAM_CHECK(ret == 0, "Alloc Device Memory Failed! Program Terminated.");
-    bmcv_image_storage_convert(objectMetadata->mFrame->mHandle, 1,
-                               image_storage.get(), &frame);
-    bm_image_destroy(*image_storage);
-    *image_storage = frame;
-  }
-
-  objectMetadata->mFrame->mSpDataOsd = image_storage;
-  objectMetadata->mFrame->mSpData.reset();
-}
-#endif
 
 void CustomOsd::drawOverlaysBmcv(bm_handle_t handle, const ChannelRule& rule,
                                  bm_image& frame, float scale_x,
@@ -523,7 +381,8 @@ void CustomOsd::drawOverlaysBmcv(bm_handle_t handle, const ChannelRule& rule,
 
 void CustomOsd::drawTrackBoxesBmcv(
     bm_handle_t handle, std::shared_ptr<common::ObjectMetadata> objectMetadata,
-    bm_image& frame, float scale_x, float scale_y) {
+    bm_image& frame, float scale_x, float scale_y,
+    const std::unordered_set<size_t>* filter_indices) {
   const int colors_num = static_cast<int>(kColors.size());
   const int thickness = std::max(1, static_cast<int>(6 * scale_x));
   const float font_scale = 3.0f * scale_x;
@@ -533,6 +392,7 @@ void CustomOsd::drawTrackBoxesBmcv(
   std::vector<bmcv_rect_t> rects;
   rects.reserve(objectMetadata->mDetectedObjectMetadatas.size());
   for (size_t i = 0; i < objectMetadata->mDetectedObjectMetadatas.size(); ++i) {
+    if (filter_indices && filter_indices->count(i) == 0) continue;
     const auto& det = objectMetadata->mDetectedObjectMetadatas[i];
     bmcv_rect_t rect;
     rect.start_x = static_cast<int>(det->mBox.mX * scale_x);
@@ -552,6 +412,7 @@ void CustomOsd::drawTrackBoxesBmcv(
   if (!mPutText) return;
 
   for (size_t i = 0; i < objectMetadata->mDetectedObjectMetadatas.size(); ++i) {
+    if (filter_indices && filter_indices->count(i) == 0) continue;
     const auto& det = objectMetadata->mDetectedObjectMetadatas[i];
     int track_id = -1;
     if (i < objectMetadata->mTrackedObjectMetadatas.size()) {
@@ -682,7 +543,9 @@ void CustomOsd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
   const int src_w = src_image.width;
   const int src_h = src_image.height;
 
-  const bool need_save = checkLineCrossing(objectMetadata, rule);
+  bool need_save = false;
+  std::unordered_set<size_t> crossing_indices =
+      checkLineCrossing(objectMetadata, rule, need_save);
 
   // Fast skip: nothing visual to render — no ROIs, no lines, no detections
   // (boxes are always drawn for detections).  When the source is already in
@@ -749,12 +612,6 @@ void CustomOsd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
                                          delete img;
                                        });
 
-  cv::Mat clean_frame;
-  if (need_save && mSaveImageMode == SaveImageMode::CLEAN) {
-    // Save clean frame at original resolution — read directly from source.
-    cv::bmcv::toMAT(&src_image, clean_frame, true);
-  }
-
   // Switch draw backend here: Bmcv (device) or OpenCv (CPU).
   drawOverlaysBmcv(handle, rule, *draw_image, scale_x, scale_y);
   drawTrackBoxesBmcv(handle, objectMetadata, *draw_image, scale_x, scale_y);
@@ -767,21 +624,17 @@ void CustomOsd::draw(std::shared_ptr<common::ObjectMetadata> objectMetadata) {
   std::shared_ptr<bm_image> output_image = draw_image;
 
   if (need_save) {
-    if (mSaveImageMode == SaveImageMode::ANNOTATED) {
-      // Draw overlays at original resolution on a full-size copy for
-      // high-quality save. This path is only taken on line-crossing events.
-      bm_image save_img = allocateImage(handle, src_w, src_h, FORMAT_YUV420P,
-                                         src_image.data_type);
-      bmcv_image_storage_convert(handle, 1, &src_image, &save_img);
-      drawOverlaysBmcv(handle, rule, save_img, 1.0f, 1.0f);
-      drawTrackBoxesBmcv(handle, objectMetadata, save_img, 1.0f, 1.0f);
-      cv::Mat annotated_frame;
-      cv::bmcv::toMAT(&save_img, annotated_frame, true);
-      saveCrossingImage(objectMetadata, annotated_frame, cv::Mat());
-      recycleImage(save_img);
-    } else {
-      saveCrossingImage(objectMetadata, clean_frame, clean_frame);
-    }
+    // Draw overlays + crossing-object boxes at original resolution for save.
+    bm_image save_img = allocateImage(handle, src_w, src_h, FORMAT_YUV420P,
+                                       src_image.data_type);
+    bmcv_image_storage_convert(handle, 1, &src_image, &save_img);
+    drawOverlaysBmcv(handle, rule, save_img, 1.0f, 1.0f);
+    drawTrackBoxesBmcv(handle, objectMetadata, save_img, 1.0f, 1.0f,
+                       &crossing_indices);
+    cv::Mat save_frame;
+    cv::bmcv::toMAT(&save_img, save_frame, true);
+    saveCrossingImage(objectMetadata, save_frame);
+    recycleImage(save_img);
   }
 
   objectMetadata->mFrame->mSpDataOsd = output_image;

@@ -79,6 +79,7 @@ class WebSocketPush : public ::sophon_stream::framework::Element {
   static constexpr const char* CONFIG_INTERNAL_IP_FIELD = "ip";
   static constexpr const char* CONFIG_INTERNAL_PORT_FIELD = "port";
   static constexpr const char* CONFIG_INTERNAL_PATH_FIELD = "path";
+  static constexpr const char* CONFIG_INTERNAL_ENABLE_FIELD = "enable";
 
  private:
   std::unordered_map<int, std::shared_ptr<WebSocketPushImpl_>> mapImpl_;
@@ -86,6 +87,7 @@ class WebSocketPush : public ::sophon_stream::framework::Element {
   std::string ip_;
   int port_;
   std::string path_;
+  bool mEnable = true;
 };
 
 }  // namespace websocket_push

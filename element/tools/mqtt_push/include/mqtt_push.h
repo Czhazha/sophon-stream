@@ -78,6 +78,7 @@ class MqttPush : public ::sophon_stream::framework::Element {
       "broker_port";
   static constexpr const char* CONFIG_INTERNAL_TOPIC_FIELD = "topic";
   static constexpr const char* CONFIG_INTERNAL_CLIENT_ID_FIELD = "client_id";
+  static constexpr const char* CONFIG_INTERNAL_ENABLE_FIELD = "enable";
 
  private:
   std::unordered_map<int, std::shared_ptr<MqttPushImpl_>> mapImpl_;
@@ -86,6 +87,7 @@ class MqttPush : public ::sophon_stream::framework::Element {
   int brokerPort_;
   std::string topic_;
   std::string clientId_;
+  bool mEnable = true;
 };
 
 }  // namespace mqtt_push

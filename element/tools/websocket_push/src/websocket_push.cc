@@ -265,6 +265,11 @@ common::ErrorCode WebSocketPush::initInternal(const std::string& json) {
       errorCode = common::ErrorCode::PARSE_CONFIGURE_FAIL;
       break;
     }
+
+    mEnable = configure.value(CONFIG_INTERNAL_ENABLE_FIELD, true);
+    IVS_INFO("WebSocketPush enable={}", mEnable);
+    if (!mEnable) break;  // 未启用时跳过连接配置校验
+
     auto ipIt = configure.find(CONFIG_INTERNAL_IP_FIELD);
     STREAM_CHECK(
         (ipIt != configure.end() && ipIt->is_string()),
@@ -308,7 +313,7 @@ common::ErrorCode WebSocketPush::doWork(int dataPipeId) {
   auto objectMetadata =
       std::static_pointer_cast<common::ObjectMetadata>(data);
 
-  if (!objectMetadata->mFrame->mEndOfStream) {
+  if (mEnable && !objectMetadata->mFrame->mEndOfStream) {
     // 仅序列化元数据，不包含图像 base64
     nlohmann::json serializedObj = serializeMetadata(objectMetadata);
 

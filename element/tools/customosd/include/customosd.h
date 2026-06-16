@@ -46,8 +46,6 @@ struct LatencyStats {
   std::int64_t sum_ms = 0;
 };
 
-enum class SaveImageMode { CLEAN, ANNOTATED };
-
 class CustomOsd : public ::sophon_stream::framework::Element {
  public:
   CustomOsd();
@@ -60,8 +58,6 @@ class CustomOsd : public ::sophon_stream::framework::Element {
       "class_names_file";
   static constexpr const char* CONFIG_INTERNAL_PUT_TEXT_FIELD = "put_text";
   static constexpr const char* CONFIG_INTERNAL_SAVE_PATH_FIELD = "save_path";
-  static constexpr const char* CONFIG_INTERNAL_SAVE_IMAGE_MODE_FIELD =
-      "save_image_mode";
   static constexpr const char* CONFIG_INTERNAL_CHANNELS_FIELD = "channels";
   static constexpr const char* CONFIG_INTERNAL_CHANNEL_ID_FIELD = "channel_id";
   static constexpr const char* CONFIG_INTERNAL_ROIS_FIELD = "rois";
@@ -74,13 +70,15 @@ class CustomOsd : public ::sophon_stream::framework::Element {
  private:
   void filterByRoi(std::shared_ptr<common::ObjectMetadata> objectMetadata,
                    const ChannelRule& rule);
-  bool checkLineCrossing(std::shared_ptr<common::ObjectMetadata> objectMetadata,
-                         const ChannelRule& rule);
+  std::unordered_set<size_t> checkLineCrossing(
+      std::shared_ptr<common::ObjectMetadata> objectMetadata,
+      const ChannelRule& rule, bool& need_save);
   void drawOverlaysBmcv(bm_handle_t handle, const ChannelRule& rule,
                         bm_image& frame, float scale_x, float scale_y);
   void drawTrackBoxesBmcv(bm_handle_t handle,
                           std::shared_ptr<common::ObjectMetadata> objectMetadata,
-                          bm_image& frame, float scale_x, float scale_y);
+                          bm_image& frame, float scale_x, float scale_y,
+                          const std::unordered_set<size_t>* filter_indices = nullptr);
   void drawOverlaysOpenCv(bm_handle_t handle, const ChannelRule& rule,
                           bm_image& frame);
   void drawTrackBoxesOpenCv(
@@ -90,7 +88,7 @@ class CustomOsd : public ::sophon_stream::framework::Element {
   void draw(std::shared_ptr<common::ObjectMetadata> objectMetadata);
   bool ensureSaveDir();
   bool saveCrossingImage(std::shared_ptr<common::ObjectMetadata> objectMetadata,
-                         const cv::Mat& osd_frame, const cv::Mat& clean_frame);
+                         const cv::Mat& frame);
   void recordOutputLatency(int channel_id, std::int64_t latency_ms);
   bool shouldDropFrame(int channel_id);
 
@@ -99,7 +97,6 @@ class CustomOsd : public ::sophon_stream::framework::Element {
   std::vector<std::string> mClassNames;
   bool mPutText = false;
   std::string mSavePath;
-  SaveImageMode mSaveImageMode = SaveImageMode::CLEAN;
   std::unordered_map<int, ChannelRule> mChannelRules;
   int mDropInterval = 1;
 
