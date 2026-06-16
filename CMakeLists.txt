@@ -53,6 +53,8 @@ checkAndAddElement(element/tools/blank)
 checkAndAddElement(element/tools/distributor)
 checkAndAddElement(element/tools/converger)
 checkAndAddElement(element/tools/http_push)
+checkAndAddElement(element/tools/websocket_push)
+checkAndAddElement(element/tools/mqtt_push)
 checkAndAddElement(element/tools/faiss)
 
 checkAndAddElement(element/tools/dwa)

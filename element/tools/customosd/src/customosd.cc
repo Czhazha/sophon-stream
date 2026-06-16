@@ -331,10 +331,11 @@ bool CustomOsd::saveCrossingImage(
       std::to_string(objectMetadata->mFrame->mFrameId) + "_" +
       std::to_string(objectMetadata->mFrame->mTimestamp) + ".jpg";
 
-  if (!cv::imwrite(img_file, source)) {
-    IVS_WARN("CustomOsd failed to save image: {}", img_file);
-    return false;
-  }
+//   if (!cv::imwrite(img_file, source)) {
+//     IVS_WARN("CustomOsd failed to save image: {}", img_file);
+//     return false;
+//   }
+  usleep(20 * 1000);
 
   IVS_INFO("CustomOsd saved crossing image: {}", img_file);
   return true;
