@@ -71,6 +71,8 @@ class Yolov8PostProcess : public ::sophon_stream::element::PostProcess {
                       common::ObjectMetadatas& objectMetadatas);
   void postProcessDetOpt(std::shared_ptr<Yolov8Context> context,
                          common::ObjectMetadatas& objectMetadatas);
+  void postProcessDetMultiScale(std::shared_ptr<Yolov8Context> context,
+                                common::ObjectMetadatas& objectMetadatas);
   void postProcessPose(std::shared_ptr<Yolov8Context> context,
                        common::ObjectMetadatas& objectMetadatas);
   void postProcessCls(std::shared_ptr<Yolov8Context> context,

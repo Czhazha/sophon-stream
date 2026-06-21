@@ -75,7 +75,9 @@ void Yolov8PostProcess::postProcess(std::shared_ptr<Yolov8Context> context,
                                     int dataPipeId) {
   if (objectMetadatas.size() == 0) return;
   if (context->taskType == TaskType::Detect) {
-    if (context->use_post_opt)
+    if (context->use_multiscale_post)
+      postProcessDetMultiScale(context, objectMetadatas);
+    else if (context->use_post_opt)
       postProcessDetOpt(context, objectMetadatas);
     else
       postProcessDet(context, objectMetadatas);
@@ -437,6 +439,219 @@ void Yolov8PostProcess::postProcessDetOpt(
       }
 
       // check the range of box
+      if (detData->mBox.mX + detData->mBox.mWidth >=
+          obj->mFrame->mSpData->width) {
+        detData->mBox.mWidth =
+            (obj->mFrame->mSpData->width - 1 - detData->mBox.mX);
+      }
+      if (detData->mBox.mY + detData->mBox.mHeight >=
+          obj->mFrame->mSpData->height) {
+        detData->mBox.mHeight =
+            (obj->mFrame->mSpData->height - 1 - detData->mBox.mY);
+      }
+
+      if (context->class_thresh_valid) {
+        detData->mLabelName = context->class_names[detData->mClassify];
+      }
+      obj->mDetectedObjectMetadatas.push_back(detData);
+    }
+    ++idx;
+  }
+}
+
+void Yolov8PostProcess::postProcessDetMultiScale(
+    std::shared_ptr<Yolov8Context> context,
+    common::ObjectMetadatas& objectMetadatas) {
+  YoloV8BoxVec yolobox_vec;
+
+  int idx = 0;
+  for (auto obj : objectMetadatas) {
+    if (obj->mFrame->mEndOfStream) break;
+    std::vector<std::shared_ptr<BMNNTensor>> outputTensors(context->output_num);
+    for (int i = 0; i < context->output_num; i++) {
+      outputTensors[i] = std::make_shared<BMNNTensor>(
+          obj->mOutputBMtensors->handle,
+          context->bmNetwork->m_netinfo->output_names[i],
+          context->bmNetwork->m_netinfo->output_scales[i],
+          obj->mOutputBMtensors->tensors[i].get(), context->bmNetwork->is_soc);
+    }
+
+    yolobox_vec.clear();
+    int frame_width = obj->mFrame->mSpData->width;
+    int frame_height = obj->mFrame->mSpData->height;
+    int tx1 = 0, ty1 = 0;
+#ifdef USE_ASPECT_RATIO
+    bool isAlignWidth = false;
+    float ratio =
+        context->roi_predefined
+            ? get_aspect_scaled_ratio(context->roi.crop_w, context->roi.crop_h,
+                                      context->net_w, context->net_h,
+                                      &isAlignWidth)
+            : get_aspect_scaled_ratio(frame_width, frame_height, context->net_w,
+                                      context->net_h, &isAlignWidth);
+    if (isAlignWidth) {
+      ty1 = (int)((context->net_h -
+                   (int)((context->roi_predefined ? context->roi.crop_h
+                                                  : frame_height) *
+                         ratio)) /
+                  2);
+    } else {
+      tx1 = (int)((context->net_w -
+                   (int)((context->roi_predefined ? context->roi.crop_w
+                                                  : frame_width) *
+                         ratio)) /
+                  2);
+    }
+#else
+    float ratio = std::min((float)context->net_w / frame_width,
+                           (float)context->net_h / frame_height);
+#endif
+
+    // Match bbox and class tensors by spatial dimensions (H, W)
+    // Multi-scale model outputs: bbox [1, 64, H, W], class [1, num_cls, H, W]
+    struct ScaleInfo {
+      int bbox_idx;
+      int class_idx;
+      int H, W, stride;
+    };
+    std::vector<ScaleInfo> scales;
+
+    int class_num = context->class_num;
+    int reg_max = context->reg_max;
+
+    for (int i = 0; i < context->output_num; i++) {
+      auto* shape = outputTensors[i]->get_shape();
+      if (shape->num_dims != 4) continue;
+      if (shape->dims[1] != 64) continue;  // bbox reg has 64 channels (4 * reg_max)
+
+      ScaleInfo si;
+      si.bbox_idx = i;
+      si.class_idx = -1;
+      si.H = shape->dims[2];
+      si.W = shape->dims[3];
+      si.stride = context->net_h / si.H;
+
+      // Find matching class output with same spatial dims
+      for (int j = 0; j < context->output_num; j++) {
+        auto* s2 = outputTensors[j]->get_shape();
+        if (s2->num_dims == 4 && s2->dims[2] == si.H && s2->dims[3] == si.W &&
+            s2->dims[1] != 64 && s2->dims[1] != 1) {
+          si.class_idx = j;
+          if (s2->dims[1] > class_num) class_num = s2->dims[1];
+          break;
+        }
+      }
+      if (si.class_idx >= 0) scales.push_back(si);
+    }
+
+    int max_wh = 7680;
+    float inv_ratio = 1.0f / ratio;
+
+    // Pre-fetch logit-space thresholds for fast pre-filtering
+    float logit_thresh_min = context->thresh_conf_min_logit;
+    const auto& logit_thresh_map = context->thresh_conf_logit;
+    bool use_class_thresh = context->class_thresh_valid;
+
+    for (const auto& scale : scales) {
+      float* bbox_data =
+          (float*)outputTensors[scale.bbox_idx]->get_cpu_data();
+      float* class_data =
+          (float*)outputTensors[scale.class_idx]->get_cpu_data();
+      int H = scale.H, W = scale.W, stride = scale.stride;
+      int spatial_size = H * W;
+
+      for (int gy = 0; gy < H; gy++) {
+        for (int gx = 0; gx < W; gx++) {
+          int offset = gy * W + gx;
+
+          // ----- Step 1: find max raw logit (NO sigmoid, just comparisons) -----
+          float max_logit = -INFINITY;
+          int max_class = 0;
+          for (int c = 0; c < class_num; c++) {
+            float logit = class_data[c * spatial_size + offset];
+            if (logit > max_logit) {
+              max_logit = logit;
+              max_class = c;
+            }
+          }
+
+          // ----- Step 2: check threshold in logit space -----
+          float class_logit_thresh;
+          if (use_class_thresh) {
+            auto it = logit_thresh_map.find(context->class_names[max_class]);
+            class_logit_thresh =
+                (it != logit_thresh_map.end()) ? it->second : logit_thresh_min;
+          } else {
+            class_logit_thresh = logit_thresh_min;
+          }
+
+          if (max_logit < class_logit_thresh) continue;  // skip 99%+ cells
+
+          // ----- Step 3: cell passes, do sigmoid on best class only -----
+          float score = sigmoid(max_logit);
+
+          // ----- Step 4: DFL decode (only for passing cells) -----
+          float distances[4] = {0, 0, 0, 0};
+          for (int k = 0; k < 4; k++) {
+            float exp_sum = 0;
+            float exp_vals[16];
+            for (int r = 0; r < reg_max; r++) {
+              int ch = k * reg_max + r;
+              float val = bbox_data[ch * spatial_size + offset];
+              exp_vals[r] = expf(val);
+              exp_sum += exp_vals[r];
+            }
+            for (int r = 0; r < reg_max; r++) {
+              distances[k] += (exp_vals[r] / exp_sum) * (float)r;
+            }
+          }
+
+          // ----- Step 5: decode to pixel coordinates -----
+          float left = distances[0], top = distances[1];
+          float right = distances[2], bottom = distances[3];
+
+          float x1 = (gx + 0.5f - left) * stride;
+          float y1 = (gy + 0.5f - top) * stride;
+          float x2 = (gx + 0.5f + right) * stride;
+          float y2 = (gy + 0.5f + bottom) * stride;
+
+          YoloV8Box box;
+          box.score = score;
+          box.class_id = max_class;
+          box.x1 = std::round((x1 - tx1) * inv_ratio);
+          box.y1 = std::round((y1 - ty1) * inv_ratio);
+          box.x2 = std::round((x2 - tx1) * inv_ratio);
+          box.y2 = std::round((y2 - ty1) * inv_ratio);
+
+          yolobox_vec.push_back(box);
+        }
+      }
+    }
+
+    clip_boxes(yolobox_vec, frame_width, frame_height);
+
+    NMS(yolobox_vec, context->thresh_nms);
+    if (yolobox_vec.size() > max_det) {
+      yolobox_vec.erase(yolobox_vec.begin(),
+                        yolobox_vec.begin() + (yolobox_vec.size() - max_det));
+    }
+
+    for (const auto& bbox : yolobox_vec) {
+      std::shared_ptr<common::DetectedObjectMetadata> detData =
+          std::make_shared<common::DetectedObjectMetadata>();
+      detData->mBox.mX = std::max(int(bbox.x1), 0);
+      detData->mBox.mY = std::max(int(bbox.y1), 0);
+      detData->mBox.mWidth = bbox.x2 - bbox.x1;
+      detData->mBox.mHeight = bbox.y2 - bbox.y1;
+      detData->mScores.push_back(bbox.score);
+      detData->mClassify = bbox.class_id;
+
+      if (context->roi_predefined) {
+        detData->mBox.mX += context->roi.start_x;
+        detData->mBox.mY += context->roi.start_y;
+      }
+
+      // Boundary check
       if (detData->mBox.mX + detData->mBox.mWidth >=
           obj->mFrame->mSpData->width) {
         detData->mBox.mWidth =

@@ -85,6 +85,15 @@ common::ErrorCode Yolov8::initContext(const std::string& json) {
                                       : thresh_it->second;
     }
 
+    // Precompute logit-space thresholds for fast pre-filtering
+    // logit = ln(conf / (1 - conf))
+    mContext->thresh_conf_min_logit =
+        std::log(mContext->thresh_conf_min / (1.0f - mContext->thresh_conf_min));
+    for (const auto& kv : mContext->thresh_conf) {
+      mContext->thresh_conf_logit[kv.first] =
+          std::log(kv.second / (1.0f - kv.second));
+    }
+
     auto threshNmsIt = configure.find(CONFIG_INTERNAL_THRESHOLD_NMS_FIELD);
     mContext->thresh_nms = threshNmsIt->get<float>();
 
@@ -130,12 +139,31 @@ common::ErrorCode Yolov8::initContext(const std::string& json) {
     mContext->output_num = mContext->bmNetwork->outputTensorNum();
     mContext->min_dim =
         mContext->bmNetwork->outputTensor(0)->get_shape()->num_dims;
+
+    // Auto-detect multi-scale 4D output format
+    // e.g. bbox branch [1, 64, H, W] + class branch [1, 80, H, W] per scale
+    if (mContext->min_dim == 4 && mContext->output_num > 1 &&
+        mContext->taskType == TaskType::Detect) {
+      mContext->use_multiscale_post = true;
+      for (int i = 0; i < mContext->output_num; i++) {
+        auto* s = mContext->bmNetwork->outputTensor(i)->get_shape();
+        if (s->num_dims == 4 && s->dims[1] != 64 && s->dims[1] != 1) {
+          mContext->class_num = s->dims[1];
+          IVS_INFO(
+              "Multi-scale detect model detected: output[{0:d}] "
+              "class_num={1:d}",
+              i, mContext->class_num);
+          break;
+        }
+      }
+    }
+
     if (mContext->output_num == 3) {
       // 暂未提供三输出模型，这里暂且留待扩展
       mContext->class_num =
           mContext->bmNetwork->outputTensor(0)->get_shape()->dims[4] - 4 - 1;
     } else {
-      if (mContext->taskType == TaskType::Detect) {
+      if (mContext->taskType == TaskType::Detect && !mContext->use_multiscale_post) {
         int ndim1 = mContext->bmNetwork->outputTensor(0)->get_shape()->dims[1];
         int ndim2 = mContext->bmNetwork->outputTensor(0)->get_shape()->dims[2];
         // Auto-detect Pose model from output shape when task_type is not

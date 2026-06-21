@@ -37,6 +37,9 @@ class Yolov8Context : public ::sophon_stream::element::Context {
   float thresh_conf_min = -1;
   std::unordered_map<std::string, float> thresh_conf;  // 置信度阈值
   float thresh_nms;                                    // nms iou阈值
+
+  float thresh_conf_min_logit = 0;                       // logit-space global threshold
+  std::unordered_map<std::string, float> thresh_conf_logit;  // logit-space per-class thresholds
   std::vector<std::string> class_names;
   bool class_thresh_valid = false;
 
@@ -58,6 +61,9 @@ class Yolov8Context : public ::sophon_stream::element::Context {
   int mask_len = 32;
 
   bool bgr_packed_input = false;
+
+  bool use_multiscale_post = false;  // multi-scale 4D output (e.g. 6 outputs: bbox+cls per scale)
+  int reg_max = 16;                  // DFL reg_max parameter
 
 };
 }  // namespace yolov8
