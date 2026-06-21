@@ -1,0 +1,13 @@
+{
+  "configure": {
+    "osd_type": "TRACK",
+    "class_names_file": "../yolov5_bytetrack_osd_qt/data/coco.names",
+    "draw_utils": "OPENCV",
+    "draw_interval": false,
+    "put_text": true
+  },
+  "shared_object": "../../build/lib/libosd.so",
+  "name": "osd",
+  "side": "sophgo",
+  "thread_number": 4
+}

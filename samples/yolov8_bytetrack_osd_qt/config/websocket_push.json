@@ -1,0 +1,12 @@
+{
+  "configure": {
+    "enable": false,
+    "ip": "192.168.150.2",
+    "port": 8765,
+    "path": "/ws/detection"
+  },
+  "shared_object": "../../build/lib/libwebsocket_push.so",
+  "name": "websocket_push",
+  "side": "sophgo",
+  "thread_number": 2
+}

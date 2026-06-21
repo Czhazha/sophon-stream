@@ -1,0 +1,114 @@
+{
+  "configure": {
+    "class_names_file": "../yolov8_bytetrack_osd_qt/data/coco.names",
+    "put_text": true,
+    "save_path": "",
+    "drop_interval": 2,
+    "channels": [
+      {
+        "channel_id": 1,
+        "rois": [
+          [
+            { "left": 0, "top": 150 },
+            { "left": 3800, "top": 150 },
+            { "left": 3800, "top": 2000 },
+            { "left": 0, "top": 2000 }
+          ]
+        ],
+        "lines": [
+          [
+            { "left": 0, "top": 700 },
+            { "left": 3800, "top": 700 }
+          ],
+	  [
+            { "left": 0, "top": 2000 },
+            { "left": 3800, "top": 2000 }
+          ],
+	  [
+            { "left": 0, "top": 2100 },
+            { "left": 3800, "top": 2100 }
+          ]
+        ]
+      },
+      {
+        "channel_id": 2,
+        "rois": [
+          [
+	    { "left": 0, "top": 150 },
+            { "left": 3800, "top": 150 },
+            { "left": 3800, "top": 2000 },
+            { "left": 0, "top": 2000 }
+          ]
+        ],
+        "lines": [
+	  [
+            { "left": 0, "top": 700 },
+            { "left": 3800, "top": 700 }
+          ],
+          [
+            { "left": 0, "top": 2000 },
+            { "left": 3800, "top": 2000 }
+          ],
+          [
+            { "left": 0, "top": 2100 },
+            { "left": 3800, "top": 2100 }
+          ]
+	]
+      },
+      {
+        "channel_id": 3,
+        "rois": [
+	  [
+	    { "left": 0, "top": 150 },
+            { "left": 3800, "top": 150 },
+            { "left": 3800, "top": 2000 },
+            { "left": 0, "top": 2000 }
+          ]
+	],
+        "lines": [
+	  [
+            { "left": 0, "top": 700 },
+            { "left": 3800, "top": 700 }
+          ],
+          [
+            { "left": 0, "top": 2000 },
+            { "left": 3800, "top": 2000 }
+          ],
+          [
+            { "left": 0, "top": 2100 },
+            { "left": 3800, "top": 2100 }
+          ]
+	]
+      },
+      {
+        "channel_id": 4,
+        "rois": [
+          [
+	    { "left": 0, "top": 150 },
+            { "left": 3800, "top": 150 },
+            { "left": 3800, "top": 2000 },
+            { "left": 0, "top": 2000 }
+          ]
+        ],
+        "lines": [
+	  [
+            { "left": 0, "top": 700 },
+            { "left": 3800, "top": 700 }
+          ],
+          [
+            { "left": 0, "top": 2000 },
+            { "left": 3800, "top": 2000 }
+          ],
+          [
+            { "left": 0, "top": 2100 },
+            { "left": 3800, "top": 2100 }
+          ]
+	]
+      }
+    ]
+  },
+  "shared_object": "../../build/lib/libcustomosd.so",
+  "name": "customosd",
+  "side": "sophgo",
+  "thread_number": 4
+}
